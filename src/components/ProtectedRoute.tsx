@@ -10,5 +10,24 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const router = useRouter();
   const [isMounted, setIsMounted] = useState(false);
 
+  useEffect(() => {
+    setIsMounted(true);
+    if (!isAuthenticated) {
+      router.push('/login');
+    }
+  }, [isAuthenticated, router]);
+
+  if (!isMounted) {
+    return null;
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Center h="100vh">
+        <Spinner size="xl" color="#10B981" />
+      </Center>
+    );
+  }
+
   return <>{children}</>;
 }

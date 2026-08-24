@@ -61,50 +61,57 @@ export default function LoginPage() {
     <Box minH="100vh" display="flex" alignItems="center" justifyContent="center" bg={useColorModeValue('gray.50', 'gray.900')} fontFamily="Inter, sans-serif">
       <Stack spacing={8} mx="auto" maxW="lg" py={12} px={6} w="full">
         <Stack align="center">
-          <Heading fontSize="4xl" color={textColor}>Sign in to your account</Heading>
-          <Text fontSize="lg" color="gray.500">
-            to enjoy all of our cool <Text as="span" color="#10B981">features</Text> ✌️
+          <Heading fontSize="4xl" color={textColor} textAlign="center">
+            Bem-vindo ao <Text as="span" color="#10B981">Figest</Text>
+          </Heading>
+          <Text fontSize="lg" color="gray.500" textAlign="center">
+            A sua plataforma de gestão financeira inteligente ✌️
           </Text>
         </Stack>
-        <Box rounded="lg" bg={bgColor} boxShadow="lg" p={8}>
+        <Box rounded="lg" bg={bgColor} boxShadow="2xl" p={8} borderWidth="1px" borderColor={useColorModeValue('gray.200', 'gray.700')}>
           <form onSubmit={handleSubmit}>
             <Stack spacing={4}>
               <FormControl id="email" isRequired>
-                <FormLabel>Email address</FormLabel>
+                <FormLabel>E-mail</FormLabel>
                 <Input
                   type="email"
                   value={email}
+                  placeholder="seu@email.com"
                   onChange={(e) => setEmail(e.target.value)}
                   focusBorderColor="#10B981"
                 />
               </FormControl>
               <FormControl id="password" isRequired>
-                <FormLabel>Password</FormLabel>
+                <FormLabel>Senha</FormLabel>
                 <Input
                   type="password"
                   value={password}
+                  placeholder="••••••••"
                   onChange={(e) => setPassword(e.target.value)}
                   focusBorderColor="#10B981"
                 />
               </FormControl>
-              <Stack spacing={10} pt={2}>
+              <Stack spacing={10} pt={4}>
                 <Button
                   type="submit"
-                  loadingText="Submitting"
+                  loadingText="Entrando..."
                   size="lg"
                   bg="#10B981"
                   color="white"
                   _hover={{
                     bg: '#059669',
+                    transform: 'translateY(-2px)',
+                    boxShadow: 'lg',
                   }}
+                  transition="all 0.2s"
                   isLoading={isLoading}
                 >
-                  Sign in
+                  Entrar
                 </Button>
               </Stack>
               <Stack pt={6}>
                 <Text align="center">
-                  Don't have an account? <ChakraLink as={Link} href="/register" color="#10B981">Register</ChakraLink>
+                  Não possui uma conta? <ChakraLink as={Link} href="/register" color="#10B981" fontWeight="bold">Registre-se</ChakraLink>
                 </Text>
               </Stack>
             </Stack>

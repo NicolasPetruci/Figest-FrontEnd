@@ -18,9 +18,9 @@ interface AuthState {
 export const useAuthStore = create<AuthState>()(
   persist(
     (set) => ({
-      user: { id: "123", email: "mock@figest.com", name: "Nicolas" },
-      accessToken: "mock_token",
-      isAuthenticated: true,
+      user: null,
+      accessToken: null,
+      isAuthenticated: false,
       login: (data) =>
         set({
           user: data.user,

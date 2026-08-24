@@ -31,3 +31,5 @@ export default function RootLayout({
     </html>
   );
 }
+
+// Refatorado para melhor legibilidade
