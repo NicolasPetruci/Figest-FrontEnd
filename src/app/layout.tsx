@@ -33,3 +33,5 @@ export default function RootLayout({
 }
 
 // Refatorado para melhor legibilidade
+
+// Ajustes de performance na renderização
