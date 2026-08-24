@@ -42,7 +42,7 @@ export default function RegisterPage() {
         duration: 3000,
         isClosable: true,
       });
-      router.push('/dashboard');
+      router.push('/');
     } catch (error) {
       toast({
         title: 'Registration failed',
