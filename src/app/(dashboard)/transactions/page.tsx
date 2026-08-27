@@ -48,6 +48,7 @@ interface Transaction {
   description: string;
   category?: Category | string;
   account?: Account | string;
+  accountId?: string;
   date: string;
 }
 
