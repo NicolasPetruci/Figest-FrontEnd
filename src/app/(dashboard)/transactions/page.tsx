@@ -85,14 +85,22 @@ interface Transaction {
 }
 
 interface ImportLog {
-  ID: number;
-  BatchID: string;
-  FileName: string;
-  FileType: string;
-  AccountID: string;
-  Subtag: string;
-  TotalTransactions: number;
-  CreatedAt: string;
+  id?: number;
+  ID?: number;
+  batchId?: string;
+  BatchID?: string;
+  fileName?: string;
+  FileName?: string;
+  fileType?: string;
+  FileType?: string;
+  accountId?: string;
+  AccountID?: string;
+  subtag?: string;
+  Subtag?: string;
+  totalTransactions?: number;
+  TotalTransactions?: number;
+  createdAt?: string;
+  CreatedAt?: string;
 }
 
 const PRESET_BANKS = [
@@ -266,7 +274,6 @@ export default function TransactionsPage() {
       const newAccount = res.data;
       toast({ title: `Banco ${finalBankName} cadastrado com sucesso!`, status: 'success', duration: 3000 });
       
-      // Auto select the new bank
       setOfxAccountId(newAccount.id);
       setFormData(prev => ({ ...prev, accountId: newAccount.id }));
       setEditBatchAccountId(newAccount.id);
@@ -390,23 +397,30 @@ export default function TransactionsPage() {
 
   const handleOpenBatchEditModal = (log: ImportLog) => {
     setEditingBatch(log);
-    setEditBatchAccountId(log.AccountID || (accounts.length > 0 ? accounts[0].id : ''));
-    setEditBatchSubtag(log.Subtag || '');
+    const accId = log.batchId || log.BatchID || log.accountId || log.AccountID || (accounts.length > 0 ? accounts[0].id : '');
+    setEditBatchAccountId(log.accountId || log.AccountID || (accounts.length > 0 ? accounts[0].id : ''));
+    setEditBatchSubtag(log.subtag || log.Subtag || '');
     onBatchEditOpen();
   };
 
   const handleSaveBatchEdit = async () => {
     if (!editingBatch) return;
+    const targetBatchId = editingBatch.batchId || editingBatch.BatchID || String(editingBatch.id || editingBatch.ID || '');
+    if (!targetBatchId) {
+      toast({ title: 'ID do lote não encontrado', status: 'error', duration: 3000 });
+      return;
+    }
+
     setIsUpdatingBatch(true);
     try {
-      await api.patch(`/integrations/import/history/${editingBatch.BatchID}`, {
+      await api.patch(`/integrations/import/history/${targetBatchId}`, {
         accountId: editBatchAccountId,
         subtag: editBatchSubtag,
       });
 
       toast({
         title: 'Extrato OFX Reclassificado!',
-        description: `Todas as transações do extrato ${editingBatch.FileName} foram atualizadas para o novo banco.`,
+        description: `Todas as transações do extrato foram atualizadas para o novo banco.`,
         status: 'success',
         duration: 4000,
       });
@@ -765,12 +779,17 @@ export default function TransactionsPage() {
             ) : (
               <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
                 {importLogs.map(log => {
-                  const accInfo = getAccountInfo(log.AccountID);
-                  const formattedDate = log.CreatedAt ? new Date(log.CreatedAt).toLocaleString('pt-BR') : 'Data recente';
+                  const accountIdVal = log.accountId || log.AccountID;
+                  const accInfo = getAccountInfo(accountIdVal);
+                  const fileNameVal = log.fileName || log.FileName;
+                  const totalTx = log.totalTransactions || log.TotalTransactions || 0;
+                  const createdAtVal = log.createdAt || log.CreatedAt;
+                  const subtagVal = log.subtag || log.Subtag;
+                  const formattedDate = createdAtVal ? new Date(createdAtVal).toLocaleString('pt-BR') : 'Data recente';
 
                   return (
                     <Box 
-                      key={log.ID} 
+                      key={log.id || log.ID || log.batchId || log.BatchID} 
                       bg={bg} 
                       p={6} 
                       borderRadius="2xl" 
@@ -785,7 +804,7 @@ export default function TransactionsPage() {
                             <Icon as={FiFileText} color="blue.600" boxSize={6} />
                           </Flex>
                           <Box>
-                            <Text fontWeight="bold" fontSize="md" noOfLines={1}>{log.FileName}</Text>
+                            <Text fontWeight="bold" fontSize="md" noOfLines={1}>{fileNameVal}</Text>
                             <Text fontSize="xs" color="gray.400">{formattedDate}</Text>
                           </Box>
                         </Flex>
@@ -794,7 +813,7 @@ export default function TransactionsPage() {
                       <VStack align="stretch" spacing={2} my={4} bg={useColorModeValue('gray.50', 'gray.900')} p={3} borderRadius="xl" fontSize="xs">
                         <Flex justify="space-between">
                           <Text color="gray.500">Transações Lidas:</Text>
-                          <Text fontWeight="bold">{log.TotalTransactions} lançamentos</Text>
+                          <Text fontWeight="bold">{totalTx} lançamentos</Text>
                         </Flex>
                         <Flex justify="space-between" align="center">
                           <Text color="gray.500">Banco Vinculado:</Text>
@@ -802,11 +821,11 @@ export default function TransactionsPage() {
                             {accInfo.bankName}
                           </Badge>
                         </Flex>
-                        {log.Subtag && (
+                        {subtagVal && (
                           <Flex justify="space-between" align="center">
                             <Text color="gray.500">Subtag do Extrato:</Text>
                             <Tag size="sm" colorScheme="purple" borderRadius="full">
-                              <TagLabel>#{log.Subtag}</TagLabel>
+                              <TagLabel>#{subtagVal}</TagLabel>
                             </Tag>
                           </Flex>
                         )}
@@ -915,7 +934,7 @@ export default function TransactionsPage() {
           <ModalBody>
             <VStack spacing={4}>
               <Text fontSize="sm" color="gray.500">
-                Altere o banco ou a subtag do extrato `{editingBatch?.FileName}`. Isso atualizará automaticamente todas as **{editingBatch?.TotalTransactions} transações** trazidas por este arquivo!
+                Altere o banco ou a subtag do extrato `{editingBatch?.fileName || editingBatch?.FileName}`. Isso atualizará automaticamente todas as **{editingBatch?.totalTransactions || editingBatch?.TotalTransactions} transações** trazidas por este arquivo!
               </Text>
 
               <FormControl isRequired>
