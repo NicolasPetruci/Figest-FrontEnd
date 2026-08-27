@@ -99,8 +99,12 @@ export default function TransactionsPage() {
         }
       }
 
-      if (resTx.status === 'fulfilled' && Array.isArray(resTx.value.data) && resTx.value.data.length > 0) {
-        setTransactions(resTx.value.data);
+      if (resTx.status === 'fulfilled' && Array.isArray(resTx.value.data)) {
+        if (resTx.value.data.length > 0) {
+          setTransactions(resTx.value.data);
+        } else {
+          setTransactions(resTx.value.data);
+        }
       } else {
         setTransactions([
           { id: '1', type: 'EXPENSE', amount: 45.9, description: 'Supermercado & Feira', category: 'Alimentação', account: 'Conta Corrente', date: new Date().toISOString() },
