@@ -1,64 +1,46 @@
-# Figest-FrontEnd
+# 💻 Figest-FrontEnd
 
-Este é o microserviço de Frontend da aplicação Figest. Ele é responsável pela interface de usuário (Dashboard) do sistema, construído com Next.js (App Router), Chakra UI, e TypeScript.
+> ⚠️ **Educational Project Notice**: This service is part of the **Figest** financial ecosystem, created for study, research, and testing purposes to demonstrate modern Next.js 16 App Router web architecture, Chakra UI design systems, and Zustand state persistence.
 
-## Funcionalidades
+---
 
-- **Dashboard:** Interface principal para visualização de dados.
-- **Gestão:** Sistema de gestão de transações e finanças.
-- **Chakra UI:** Design system customizado para a identidade visual do Figest.
-- **i18n:** Suporte a múltiplos idiomas com `next-intl`.
+## 📌 Overview
 
-## Tecnologias
+**Figest-FrontEnd** is the web interface for the Figest financial management platform. It offers a sleek, dark-mode-first dashboard with interactive financial management, expense pie charts, trend graphs, B2B purchasing, category management, report exports, and system settings.
 
-- Next.js 15 (App Router)
-- React
-- TypeScript
-- Chakra UI
-- Zustand (Gerenciamento de Estado)
-- Framer Motion & Recharts
-- Docker
+---
 
-## Como Rodar
+## 🛠️ Tech Stack
+* **Framework:** Next.js 16 (App Router + React 19)
+* **Language:** TypeScript
+* **UI Components:** Chakra UI v2 + React Icons + Framer Motion
+* **Charts:** Recharts
+* **State Management:** Zustand + `persist` middleware
+* **HTTP Client:** Axios + Request/Response Interceptors
 
-### Pré-requisitos
-- Node.js (v20+)
-- NPM ou Yarn
+---
 
-### Desenvolvimento
+## 🗺️ Application Routes
 
-1. Instale as dependências:
-   ```bash
-   npm install
-   ```
+| Path | Description | Protected |
+|---|---|---|
+| `/login` | User Authentication | ❌ Public |
+| `/register` | Account Sign Up | ❌ Public |
+| `/` | Main Financial Dashboard | ✅ Protected |
+| `/transactions` | Income/Expense List & `.OFX` Import | ✅ Protected |
+| `/accounts` | Bank Accounts & Open Finance | ✅ Protected |
+| `/categories` | Expense & Income Category Management | ✅ Protected |
+| `/purchases` | B2B Purchase Orders & Suppliers | ✅ Protected |
+| `/reports` | Financial Statement Exports (PDF / CSV / PNG) | ✅ Protected |
+| `/settings` | Profile, Dark Mode, Language & Currency | ✅ Protected |
 
-2. Crie um arquivo `.env.local` na raiz do projeto (use o `.env.local.example` como base):
-   ```bash
-   cp .env.local.example .env.local
-   ```
+---
 
-3. Inicie o servidor de desenvolvimento:
-   ```bash
-   npm run dev
-   ```
-
-4. Abra [http://localhost:3000](http://localhost:3000) no seu navegador.
-
-### Produção (Docker)
-
-Para construir e rodar a imagem Docker:
+## 🚀 Running Locally
 
 ```bash
-docker build -t figest-frontend .
-docker run -p 3000:3000 figest-frontend
+npm install
+npm run dev
 ```
 
-## Estrutura do Projeto
-
-- `/src/app`: Rotas e layouts do Next.js (App Router)
-- `/src/components`: Componentes reutilizáveis (UI, layout, gráficos, etc)
-- `/src/hooks`: Custom React hooks
-- `/src/lib`: Utilitários e configurações
-- `/src/stores`: Gerenciamento de estado global com Zustand
-- `/src/theme`: Configuração e overrides do tema Chakra UI
-- `/src/locales`: Dicionários de tradução (i18n)
+Open [http://localhost:3000](http://localhost:3000) with your browser.
