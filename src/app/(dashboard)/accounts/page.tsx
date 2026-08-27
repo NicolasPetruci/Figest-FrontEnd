@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import dynamic from 'next/dynamic';
 import {
   Box,
   SimpleGrid,
@@ -48,9 +49,15 @@ import {
   FiDollarSign,
   FiTrendingUp,
   FiBriefcase,
-  FiCheckCircle,
+  FiLink,
 } from 'react-icons/fi';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/authStore';
+
+const PluggyConnect = dynamic(
+  () => import('react-pluggy-connect').then((mod) => mod.PluggyConnect),
+  { ssr: false }
+);
 
 export type AccountType = 'CHECKING' | 'SAVINGS' | 'CREDIT_CARD' | 'CASH' | 'INVESTMENT';
 
@@ -77,12 +84,14 @@ const DEFAULT_ACCOUNTS: Account[] = [
 ];
 
 export default function AccountsPage() {
+  const user = useAuthStore((state) => state.user);
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [connectToken, setConnectToken] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const cancelRef = React.useRef<any>(null);
 
@@ -185,21 +194,32 @@ export default function AccountsPage() {
   const handleConnectBank = async () => {
     setIsConnecting(true);
     try {
-      await api.get('/integrations/pluggy/token');
-      toast({
-        title: 'Conexão Open Finance Realizada!',
-        description: 'Integração bancária via Pluggy configurada.',
-        status: 'success',
-        duration: 3000,
-        isClosable: true,
+      const response = await fetch('/api/connect-token', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientUserId: user?.id || 'user-1' }),
       });
-    } catch (error) {
-      console.error('Failed to connect bank', error);
+      const data = await response.json();
+
+      if (data.accessToken) {
+        setConnectToken(data.accessToken);
+        toast({
+          title: 'Widget Pluggy Aberto!',
+          description: 'Selecione sua instituição bancária no widget.',
+          status: 'success',
+          duration: 4000,
+          isClosable: true,
+        });
+      } else {
+        throw new Error(data.error || 'Token não retornado pela API da Pluggy');
+      }
+    } catch (error: any) {
+      console.error('Failed to connect bank:', error);
       toast({
-        title: 'Conexão Open Finance (Modo Simulação)',
-        description: 'Integração pronta para sincronização bancária.',
-        status: 'info',
-        duration: 3000,
+        title: 'Erro na integração Pluggy',
+        description: error?.message || 'Verifique se CLIENT_ID e CLIENT_SECRET estão configurados no .env',
+        status: 'error',
+        duration: 5000,
         isClosable: true,
       });
     } finally {
@@ -218,13 +238,13 @@ export default function AccountsPage() {
       {/* Header */}
       <Flex direction={{ base: 'column', md: 'row' }} justify="space-between" align={{ base: 'stretch', md: 'center' }} gap={4} mb={6}>
         <Box>
-          <Heading size="lg" fontWeight="bold">Contas Bancárias & Carteiras</Heading>
+          <Heading size="lg" fontWeight="bold">Contas Bancárias & Open Finance</Heading>
           <Text color="gray.500" fontSize="sm">
             Saldo Total Consolidado: <Text as="span" fontWeight="bold" color={totalBalance >= 0 ? 'emerald.500' : 'red.500'}>{formatCurrency(totalBalance)}</Text>
           </Text>
         </Box>
         <HStack spacing={3}>
-          <Button leftIcon={<Icon as={FiCreditCard} />} colorScheme="blue" variant="outline" borderRadius="xl" onClick={handleConnectBank} isLoading={isConnecting}>
+          <Button leftIcon={<Icon as={FiLink} />} colorScheme="blue" borderRadius="xl" onClick={handleConnectBank} isLoading={isConnecting}>
             Conectar Banco (Pluggy)
           </Button>
           <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={handleOpenCreateModal}>
@@ -233,13 +253,43 @@ export default function AccountsPage() {
         </HStack>
       </Flex>
 
+      {/* Pluggy Connect Overlay Widget */}
+      {connectToken && (
+        <PluggyConnect
+          connectToken={connectToken}
+          includeSandbox={true}
+          onSuccess={(itemData) => {
+            toast({
+              title: 'Banco Conectado com Sucesso! 🎉',
+              description: `Sua conta foi conectada via Pluggy. ID: ${itemData.item.id}`,
+              status: 'success',
+              duration: 5000,
+              isClosable: true,
+            });
+            setConnectToken(null);
+            fetchAccounts();
+          }}
+          onError={(error) => {
+            console.error('Pluggy Connect Error:', error);
+            toast({
+              title: 'Falha na conexão bancária',
+              description: error.message || 'Ocorreu um erro durante a autenticação bancária',
+              status: 'error',
+              duration: 4000,
+              isClosable: true,
+            });
+          }}
+          onClose={() => setConnectToken(null)}
+        />
+      )}
+
       {/* Accounts Grid */}
       {isLoading ? (
         <Flex justify="center" p={10}><Spinner color="emerald.500" size="xl" /></Flex>
       ) : accounts.length === 0 ? (
         <Flex direction="column" align="center" justify="center" h="200px" bg={cardBg} borderRadius="2xl" borderWidth="1px" borderColor={borderColor}>
           <Icon as={FiCreditCard} boxSize={10} color="gray.500" mb={2} />
-          <Text color="gray.400">Nenhuma conta cadastrada. Adicione sua primeira conta bancária.</Text>
+          <Text color="gray.400">Nenhuma conta cadastrada. Adicione sua primeira conta bancária ou conecte via Pluggy.</Text>
         </Flex>
       ) : (
         <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
