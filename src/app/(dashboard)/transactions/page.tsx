@@ -23,12 +23,11 @@ import {
   Select,
   VStack,
   HStack,
-  IconButton,
   Spinner,
   useToast,
   Badge,
 } from '@chakra-ui/react';
-import { FiPlus, FiArrowUpRight, FiArrowDownRight, FiUploadCloud, FiFileText } from 'react-icons/fi';
+import { FiPlus, FiArrowUpRight, FiArrowDownRight, FiUploadCloud, FiFileText, FiInbox } from 'react-icons/fi';
 import { api } from '@/lib/api';
 
 interface Category {
@@ -100,25 +99,13 @@ export default function TransactionsPage() {
       }
 
       if (resTx.status === 'fulfilled' && Array.isArray(resTx.value.data)) {
-        if (resTx.value.data.length > 0) {
-          setTransactions(resTx.value.data);
-        } else {
-          setTransactions(resTx.value.data);
-        }
+        setTransactions(resTx.value.data);
       } else {
-        setTransactions([
-          { id: '1', type: 'EXPENSE', amount: 45.9, description: 'Supermercado & Feira', category: 'Alimentação', account: 'Conta Corrente', date: new Date().toISOString() },
-          { id: '2', type: 'INCOME', amount: 4500, description: 'Pagamento de Salário', category: 'Salário', account: 'Conta Corrente', date: new Date(Date.now() - 86400000).toISOString() },
-          { id: '3', type: 'EXPENSE', amount: 150.0, description: 'Combustível Posto Shell', category: 'Transporte', account: 'Cartão de Crédito', date: new Date(Date.now() - 172800000).toISOString() },
-        ]);
+        setTransactions([]);
       }
     } catch (error) {
-      console.error('Failed to fetch transaction data', error);
-      setTransactions([
-        { id: '1', type: 'EXPENSE', amount: 45.9, description: 'Supermercado & Feira', category: 'Alimentação', account: 'Conta Corrente', date: new Date().toISOString() },
-        { id: '2', type: 'INCOME', amount: 4500, description: 'Pagamento de Salário', category: 'Salário', account: 'Conta Corrente', date: new Date(Date.now() - 86400000).toISOString() },
-        { id: '3', type: 'EXPENSE', amount: 150.0, description: 'Combustível Posto Shell', category: 'Transporte', account: 'Cartão de Crédito', date: new Date(Date.now() - 172800000).toISOString() },
-      ]);
+      console.error('Failed to fetch transaction data from backend', error);
+      setTransactions([]);
     } finally {
       setIsLoading(false);
     }
@@ -139,27 +126,21 @@ export default function TransactionsPage() {
         type: formData.type,
         amount: Number(formData.amount),
         description: formData.description,
-        categoryId: formData.categoryId,
-        accountId: formData.accountId,
+        categoryId: formData.categoryId || undefined,
+        accountId: formData.accountId || undefined,
         date: new Date(formData.date).toISOString(),
       });
-      toast({ title: 'Transação salva com sucesso!', status: 'success', duration: 3000 });
+      toast({ title: 'Transação salva no banco de dados!', status: 'success', duration: 3000 });
       onClose();
       fetchData();
-    } catch (error) {
-      console.error('Failed to save transaction', error);
-      const selectedCat = categories.find(c => c.id === formData.categoryId)?.name || 'Geral';
-      setTransactions([{ 
-        id: Math.random().toString(),
-        type: formData.type as 'INCOME' | 'EXPENSE',
-        amount: Number(formData.amount),
-        description: formData.description,
-        category: selectedCat,
-        accountId: formData.accountId,
-        date: new Date(formData.date).toISOString()
-      }, ...transactions]);
-      toast({ title: 'Transação registrada!', status: 'info', duration: 3000 });
-      onClose();
+    } catch (error: any) {
+      console.error('Failed to save transaction to backend', error);
+      toast({
+        title: 'Erro ao salvar transação',
+        description: error?.response?.data?.message || 'Verifique a conexão com o servidor.',
+        status: 'error',
+        duration: 4000,
+      });
     }
   };
 
@@ -173,16 +154,25 @@ export default function TransactionsPage() {
     try {
       const data = new FormData();
       data.append('file', ofxFile);
-      await api.post('/integrations/import/ofx', data, {
+      const res = await api.post('/integrations/import/ofx', data, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      toast({ title: 'Extrato OFX importado com sucesso!', status: 'success', duration: 3000 });
+      toast({
+        title: 'Extrato OFX importado com sucesso!',
+        description: `Transações processadas: ${res.data?.inserted ?? res.data?.transactions ?? 0}`,
+        status: 'success',
+        duration: 4000,
+      });
       onOfxClose();
       fetchData();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Erro ao importar OFX:', error);
-      toast({ title: 'Extrato OFX processado (Simulação)', status: 'info', duration: 3000 });
-      onOfxClose();
+      toast({
+        title: 'Erro ao importar extrato OFX',
+        description: error?.response?.data?.message || 'Falha ao comunicar com o servidor de integração.',
+        status: 'error',
+        duration: 4000,
+      });
     } finally {
       setIsUploadingOfx(false);
       setOfxFile(null);
@@ -227,6 +217,22 @@ export default function TransactionsPage() {
 
       {isLoading ? (
         <Flex justify="center" p={10}><Spinner color="emerald.500" size="xl" /></Flex>
+      ) : transactions.length === 0 ? (
+        <Flex direction="column" align="center" justify="center" minH="300px" bg={bg} borderRadius="2xl" borderWidth="1px" borderColor={borderColor} p={8}>
+          <Icon as={FiInbox} boxSize={12} color="gray.400" mb={3} />
+          <Text fontSize="lg" fontWeight="bold">Nenhuma transação encontrada</Text>
+          <Text fontSize="sm" color="gray.500" mb={6} textAlign="center" maxW="400px">
+            Seu histórico de lançamentos está vazio. Adicione uma transação manualmente ou importe seu extrato bancário `.OFX`.
+          </Text>
+          <HStack spacing={4}>
+            <Button leftIcon={<FiUploadCloud />} colorScheme="blue" variant="outline" borderRadius="xl" onClick={onOfxOpen}>
+              Importar Extrato .OFX
+            </Button>
+            <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={onOpen}>
+              Criar Lançamento
+            </Button>
+          </HStack>
+        </Flex>
       ) : (
         <VStack spacing={6} align="stretch" pb={20}>
           {Object.entries(groupedTransactions).map(([date, items]) => (
@@ -336,16 +342,8 @@ export default function TransactionsPage() {
                     onChange={(e) => setFormData({...formData, categoryId: e.target.value})}
                     borderRadius="xl"
                   >
-                    {categories.length > 0 ? (
-                      categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)
-                    ) : (
-                      <>
-                        <option value="cat-1">Alimentação</option>
-                        <option value="cat-2">Moradia</option>
-                        <option value="cat-3">Transporte</option>
-                        <option value="cat-4">Salário & Proventos</option>
-                      </>
-                    )}
+                    <option value="">Geral / Padrão</option>
+                    {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                   </Select>
                 </FormControl>
 
@@ -356,11 +354,8 @@ export default function TransactionsPage() {
                     onChange={(e) => setFormData({...formData, accountId: e.target.value})}
                     borderRadius="xl"
                   >
-                    {accounts.length > 0 ? (
-                      accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)
-                    ) : (
-                      <option value="acc-1">Conta Corrente Principal</option>
-                    )}
+                    <option value="">Conta Padrão</option>
+                    {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                   </Select>
                 </FormControl>
               </HStack>

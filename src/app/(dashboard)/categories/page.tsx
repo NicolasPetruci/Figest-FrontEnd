@@ -147,14 +147,14 @@ export default function CategoriesPage() {
     setIsLoading(true);
     try {
       const response = await api.get('/finance/categories');
-      if (Array.isArray(response.data) && response.data.length > 0) {
+      if (Array.isArray(response.data)) {
         setCategories(response.data);
       } else {
-        setCategories(DEFAULT_CATEGORIES);
+        setCategories([]);
       }
     } catch (error) {
-      console.error('Falha ao carregar categorias:', error);
-      setCategories(DEFAULT_CATEGORIES);
+      console.error('Failed to fetch categories from backend', error);
+      setCategories([]);
     } finally {
       setIsLoading(false);
     }

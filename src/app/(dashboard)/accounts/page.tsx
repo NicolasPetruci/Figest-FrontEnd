@@ -107,14 +107,14 @@ export default function AccountsPage() {
     setIsLoading(true);
     try {
       const response = await api.get('/finance/accounts');
-      if (Array.isArray(response.data) && response.data.length > 0) {
+      if (Array.isArray(response.data)) {
         setAccounts(response.data);
       } else {
-        setAccounts(DEFAULT_ACCOUNTS);
+        setAccounts([]);
       }
     } catch (error) {
-      console.error('Failed to fetch accounts', error);
-      setAccounts(DEFAULT_ACCOUNTS);
+      console.error('Failed to fetch accounts from backend', error);
+      setAccounts([]);
     } finally {
       setIsLoading(false);
     }

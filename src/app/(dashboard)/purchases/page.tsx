@@ -129,21 +129,21 @@ export default function PurchasesPage() {
         api.get('/purchases/suppliers'),
       ]);
 
-      let loadedSuppliers = DEFAULT_SUPPLIERS;
-      if (resSuppliers.status === 'fulfilled' && Array.isArray(resSuppliers.value.data) && resSuppliers.value.data.length > 0) {
-        loadedSuppliers = resSuppliers.value.data;
+      if (resSuppliers.status === 'fulfilled' && Array.isArray(resSuppliers.value.data)) {
+        setSuppliers(resSuppliers.value.data);
+      } else {
+        setSuppliers([]);
       }
-      setSuppliers(loadedSuppliers);
 
-      if (resPurchases.status === 'fulfilled' && Array.isArray(resPurchases.value.data) && resPurchases.value.data.length > 0) {
+      if (resPurchases.status === 'fulfilled' && Array.isArray(resPurchases.value.data)) {
         setPurchases(resPurchases.value.data);
       } else {
-        setPurchases(DEFAULT_PURCHASES);
+        setPurchases([]);
       }
     } catch (error) {
-      console.error('Erro ao buscar dados de compras:', error);
-      setSuppliers(DEFAULT_SUPPLIERS);
-      setPurchases(DEFAULT_PURCHASES);
+      console.error('Erro ao buscar dados de compras no backend:', error);
+      setSuppliers([]);
+      setPurchases([]);
     } finally {
       setIsLoading(false);
     }
