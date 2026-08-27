@@ -28,6 +28,13 @@ import {
   Badge,
   Tag,
   TagLabel,
+  Checkbox,
+  IconButton,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
+  Tooltip,
 } from '@chakra-ui/react';
 import {
   FiPlus,
@@ -37,7 +44,11 @@ import {
   FiFileText,
   FiInbox,
   FiFilter,
-  FiCalendar,
+  FiEdit2,
+  FiTrash2,
+  FiMoreVertical,
+  FiCheckSquare,
+  FiTag,
 } from 'react-icons/fi';
 import { api } from '@/lib/api';
 
@@ -59,6 +70,7 @@ interface Transaction {
   amount: number;
   description: string;
   category?: Category | string;
+  categoryId?: string;
   account?: Account | string;
   accountId?: string;
   subtag?: string;
@@ -79,9 +91,19 @@ export default function TransactionsPage() {
   const [selectedAccountId, setSelectedAccountId] = useState<string>('');
   const [selectedSubtag, setSelectedSubtag] = useState<string>('');
 
-  // Modals
-  const { isOpen, onOpen, onClose } = useDisclosure();
+  // Selection & Bulk Actions State
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [bulkAccountId, setBulkAccountId] = useState('');
+  const [bulkCategoryId, setBulkCategoryId] = useState('');
+  const [bulkSubtag, setBulkSubtag] = useState('');
+  const [isBulkUpdating, setIsBulkUpdating] = useState(false);
+
+  // Modals State
+  const { isOpen, onOpen, onClose } = useDisclosure(); // Create/Edit Modal
   const { isOpen: isOfxOpen, onOpen: onOfxOpen, onClose: onOfxClose } = useDisclosure();
+  const { isOpen: isBulkOpen, onOpen: onBulkOpen, onClose: onBulkClose } = useDisclosure();
+
+  const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
   // Form State
   const [formData, setFormData] = useState({
@@ -126,15 +148,11 @@ export default function TransactionsPage() {
 
       if (resCat.status === 'fulfilled' && Array.isArray(resCat.value.data)) {
         setCategories(resCat.value.data);
-        if (resCat.value.data.length > 0 && !formData.categoryId) {
-          setFormData(prev => ({ ...prev, categoryId: resCat.value.data[0].id }));
-        }
       }
 
       if (resAcc.status === 'fulfilled' && Array.isArray(resAcc.value.data)) {
         setAccounts(resAcc.value.data);
-        if (resAcc.value.data.length > 0 && !formData.accountId) {
-          setFormData(prev => ({ ...prev, accountId: resAcc.value.data[0].id }));
+        if (resAcc.value.data.length > 0 && !ofxAccountId) {
           setOfxAccountId(resAcc.value.data[0].id);
         }
       }
@@ -156,6 +174,36 @@ export default function TransactionsPage() {
     fetchData();
   }, [periodMode, selectedMonth, selectedYear, selectedAccountId, selectedSubtag]);
 
+  const handleOpenCreateModal = () => {
+    setEditingTx(null);
+    setFormData({
+      type: 'EXPENSE',
+      amount: '',
+      description: '',
+      categoryId: categories.length > 0 ? categories[0].id : '',
+      accountId: accounts.length > 0 ? accounts[0].id : '',
+      subtag: '',
+      date: new Date().toISOString().split('T')[0],
+    });
+    onOpen();
+  };
+
+  const handleOpenEditModal = (t: Transaction) => {
+    setEditingTx(t);
+    const catId = typeof t.category === 'object' ? t.category?.id : (t.categoryId || '');
+    const accId = typeof t.account === 'object' ? t.account?.id : (t.accountId || '');
+    setFormData({
+      type: t.type,
+      amount: String(t.amount),
+      description: t.description,
+      categoryId: catId || (categories.length > 0 ? categories[0].id : ''),
+      accountId: accId || (accounts.length > 0 ? accounts[0].id : ''),
+      subtag: t.subtag || '',
+      date: t.date ? new Date(t.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+    });
+    onOpen();
+  };
+
   const handleSave = async () => {
     if (!formData.amount || !formData.description) {
       toast({ title: 'Preencha o valor e a descrição', status: 'warning', duration: 3000 });
@@ -163,21 +211,38 @@ export default function TransactionsPage() {
     }
 
     try {
-      await api.post('/finance/transactions', {
-        type: formData.type,
+      const payload = {
+        type: formData.type as 'INCOME' | 'EXPENSE',
         amount: Number(formData.amount),
         description: formData.description,
         categoryId: formData.categoryId || undefined,
         accountId: formData.accountId || undefined,
         subtag: formData.subtag || undefined,
         date: new Date(formData.date).toISOString(),
-      });
-      toast({ title: 'Transação salva com sucesso!', status: 'success', duration: 3000 });
+      };
+
+      if (editingTx) {
+        await api.patch(`/finance/transactions/${editingTx.id}`, payload);
+        toast({ title: 'Transação atualizada com sucesso!', status: 'success', duration: 3000 });
+      } else {
+        await api.post('/finance/transactions', payload);
+        toast({ title: 'Transação criada com sucesso!', status: 'success', duration: 3000 });
+      }
       onClose();
       fetchData();
     } catch (error: any) {
       console.error('Failed to save transaction to backend', error);
       toast({ title: 'Erro ao salvar transação', status: 'error', duration: 4000 });
+    }
+  };
+
+  const handleDeleteTx = async (id: string) => {
+    try {
+      await api.delete(`/finance/transactions/${id}`);
+      toast({ title: 'Transação excluída', status: 'success', duration: 3000 });
+      fetchData();
+    } catch (error) {
+      console.error('Failed to delete transaction', error);
     }
   };
 
@@ -199,7 +264,7 @@ export default function TransactionsPage() {
       });
       toast({
         title: 'Extrato OFX importado com sucesso!',
-        description: `Transações cadastradas no banco selecionado: ${res.data?.inserted ?? 0}`,
+        description: `${res.data?.inserted ?? 0} transações vinculadas ao banco e tageadas.`,
         status: 'success',
         duration: 4000,
       });
@@ -214,6 +279,49 @@ export default function TransactionsPage() {
     }
   };
 
+  // Checkbox selection logic
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(transactions.map(t => t.id));
+    } else {
+      setSelectedIds([]);
+    }
+  };
+
+  const handleToggleSelect = (id: string) => {
+    setSelectedIds(prev => 
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  // Bulk Edit Execution
+  const handleApplyBulkUpdate = async () => {
+    if (selectedIds.length === 0) return;
+    setIsBulkUpdating(true);
+    try {
+      await api.post('/finance/transactions/bulk-update', {
+        transactionIds: selectedIds,
+        accountId: bulkAccountId || undefined,
+        categoryId: bulkCategoryId || undefined,
+        subtag: bulkSubtag.trim() !== '' ? bulkSubtag : undefined,
+      });
+      toast({
+        title: 'Transações Reclassificadas!',
+        description: `${selectedIds.length} transações atualizadas com sucesso.`,
+        status: 'success',
+        duration: 4000,
+      });
+      setSelectedIds([]);
+      onBulkClose();
+      fetchData();
+    } catch (error) {
+      console.error('Failed to bulk update transactions', error);
+      toast({ title: 'Erro na reclassificação em massa', status: 'error', duration: 4000 });
+    } finally {
+      setIsBulkUpdating(false);
+    }
+  };
+
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
   };
@@ -225,8 +333,8 @@ export default function TransactionsPage() {
   };
 
   const getAccountInfo = (acc?: Account | string) => {
-    if (!acc) return { name: 'Conta Principal', bankName: 'Banco', color: '#10B981' };
-    if (typeof acc === 'string') return { name: acc, bankName: 'Banco', color: '#10B981' };
+    if (!acc) return { name: 'Conta Principal', bankName: 'Banco Geral', color: '#10B981' };
+    if (typeof acc === 'string') return { name: acc, bankName: 'Banco Geral', color: '#10B981' };
     return {
       name: acc.name,
       bankName: acc.bankName || acc.name,
@@ -242,20 +350,22 @@ export default function TransactionsPage() {
     return acc;
   }, {} as Record<string, Transaction[]>);
 
+  const allSelected = transactions.length > 0 && selectedIds.length === transactions.length;
+
   return (
-    <Box position="relative" minH="100%">
+    <Box position="relative" minH="100%" pb={28}>
       {/* Header */}
       <Flex direction={{ base: 'column', md: 'row' }} justify="space-between" align={{ base: 'stretch', md: 'center' }} gap={4} mb={6}>
         <Box>
-          <Heading size="lg" fontWeight="bold">Transações Financeiras</Heading>
-          <Text color="gray.500" fontSize="sm">Filtre por banco (Nubank, Santander, etc.), subtags e período mensal/anual</Text>
+          <Heading size="lg" fontWeight="bold">Gestão & Tageamento de Transações</Heading>
+          <Text color="gray.500" fontSize="sm">Edite, classifique e adicione tags/bancos aos seus extratos importados</Text>
         </Box>
         
         <HStack spacing={3}>
           <Button leftIcon={<FiUploadCloud />} variant="outline" colorScheme="blue" borderRadius="xl" onClick={onOfxOpen}>
             Importar Extrato OFX
           </Button>
-          <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={onOpen}>
+          <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={handleOpenCreateModal}>
             Nova Transação
           </Button>
         </HStack>
@@ -269,6 +379,18 @@ export default function TransactionsPage() {
             <Text fontSize="sm" fontWeight="bold">Filtros:</Text>
           </HStack>
 
+          {/* Selection Checkbox Header */}
+          {transactions.length > 0 && (
+            <Checkbox 
+              isChecked={allSelected} 
+              isIndeterminate={selectedIds.length > 0 && !allSelected} 
+              onChange={(e) => handleSelectAll(e.target.checked)}
+              colorScheme="emerald"
+            >
+              <Text fontSize="xs" fontWeight="bold" color="gray.500">Selecionar Todos</Text>
+            </Checkbox>
+          )}
+
           {/* Period Mode */}
           <Select 
             value={periodMode} 
@@ -281,7 +403,7 @@ export default function TransactionsPage() {
             <option value="ANNUAL">Visão Anual</option>
           </Select>
 
-          {/* Month Selector (if monthly) */}
+          {/* Month Selector */}
           {periodMode === 'MONTHLY' && (
             <Select 
               value={selectedMonth} 
@@ -322,7 +444,7 @@ export default function TransactionsPage() {
           <Select 
             value={selectedAccountId} 
             onChange={(e) => setSelectedAccountId(e.target.value)} 
-            w={{ base: 'full', lg: '200px' }} 
+            w={{ base: 'full', lg: '180px' }} 
             borderRadius="xl" 
             size="sm"
           >
@@ -337,7 +459,7 @@ export default function TransactionsPage() {
             placeholder="Filtrar por Subtag (ex: Ifood)" 
             value={selectedSubtag} 
             onChange={(e) => setSelectedSubtag(e.target.value)} 
-            w={{ base: 'full', lg: '220px' }} 
+            w={{ base: 'full', lg: '200px' }} 
             borderRadius="xl" 
             size="sm"
           />
@@ -350,21 +472,21 @@ export default function TransactionsPage() {
       ) : transactions.length === 0 ? (
         <Flex direction="column" align="center" justify="center" minH="280px" bg={bg} borderRadius="2xl" borderWidth="1px" borderColor={borderColor} p={8}>
           <Icon as={FiInbox} boxSize={12} color="gray.400" mb={3} />
-          <Text fontSize="lg" fontWeight="bold">Nenhuma transação para este filtro</Text>
+          <Text fontSize="lg" fontWeight="bold">Nenhuma transação encontrada</Text>
           <Text fontSize="sm" color="gray.500" mb={6} textAlign="center" maxW="400px">
-            Não foram encontrados lançamentos no período ou banco selecionado.
+            Seu extrato está vazio no filtro atual. Importe um extrato `.OFX` ou adicione uma transação manual.
           </Text>
           <HStack spacing={4}>
             <Button leftIcon={<FiUploadCloud />} colorScheme="blue" variant="outline" borderRadius="xl" onClick={onOfxOpen}>
               Importar Extrato .OFX
             </Button>
-            <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={onOpen}>
+            <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={handleOpenCreateModal}>
               Criar Lançamento
             </Button>
           </HStack>
         </Flex>
       ) : (
-        <VStack spacing={6} align="stretch" pb={20}>
+        <VStack spacing={6} align="stretch">
           {Object.entries(groupedTransactions).map(([date, items]) => (
             <Box key={date}>
               <Text fontSize="xs" fontWeight="bold" color="gray.500" mb={3} textTransform="uppercase" letterSpacing="wider">
@@ -373,14 +495,16 @@ export default function TransactionsPage() {
               <VStack spacing={3} align="stretch">
                 {items.map(t => {
                   const accInfo = getAccountInfo(t.account);
+                  const isSelected = selectedIds.includes(t.id);
+
                   return (
                     <Flex 
                       key={t.id} 
-                      bg={bg} 
+                      bg={isSelected ? useColorModeValue('emerald.50', 'gray.700') : bg} 
                       p={4} 
                       borderRadius="2xl" 
                       borderWidth="1px" 
-                      borderColor={borderColor}
+                      borderColor={isSelected ? '#10B981' : borderColor}
                       align="center"
                       justify="space-between"
                       shadow="sm"
@@ -388,6 +512,13 @@ export default function TransactionsPage() {
                       _hover={{ boxShadow: 'md' }}
                     >
                       <Flex align="center">
+                        <Checkbox 
+                          isChecked={isSelected} 
+                          onChange={() => handleToggleSelect(t.id)} 
+                          colorScheme="emerald" 
+                          mr={4}
+                        />
+
                         <Flex 
                           bg={t.type === 'INCOME' ? 'emerald.100' : 'red.100'} 
                           p={3} 
@@ -400,6 +531,7 @@ export default function TransactionsPage() {
                             boxSize={5} 
                           />
                         </Flex>
+
                         <Box>
                           <HStack spacing={2} mb={1}>
                             <Text fontWeight="bold">{t.description}</Text>
@@ -407,7 +539,7 @@ export default function TransactionsPage() {
                               bg={`${accInfo.color}20`} 
                               style={{ color: accInfo.color }} 
                               borderRadius="full" 
-                              px={2} 
+                              px={2.5} 
                               py={0.5} 
                               fontSize="xs"
                               fontWeight="bold"
@@ -427,13 +559,35 @@ export default function TransactionsPage() {
                           </HStack>
                         </Box>
                       </Flex>
-                      <Text 
-                        fontWeight="bold" 
-                        fontSize="lg"
-                        color={t.type === 'INCOME' ? 'emerald.500' : 'red.500'}
-                      >
-                        {t.type === 'INCOME' ? '+' : '-'}{formatCurrency(t.amount)}
-                      </Text>
+
+                      <HStack spacing={4}>
+                        <Text 
+                          fontWeight="bold" 
+                          fontSize="lg"
+                          color={t.type === 'INCOME' ? 'emerald.500' : 'red.500'}
+                        >
+                          {t.type === 'INCOME' ? '+' : '-'}{formatCurrency(t.amount)}
+                        </Text>
+
+                        <Menu>
+                          <MenuButton
+                            as={IconButton}
+                            icon={<FiMoreVertical />}
+                            variant="ghost"
+                            size="sm"
+                            borderRadius="lg"
+                            aria-label="Opções"
+                          />
+                          <MenuList borderRadius="xl">
+                            <MenuItem icon={<FiEdit2 />} onClick={() => handleOpenEditModal(t)}>
+                              Editar / Tagear
+                            </MenuItem>
+                            <MenuItem icon={<FiTrash2 />} color="red.400" onClick={() => handleDeleteTx(t.id)}>
+                              Excluir Lançamento
+                            </MenuItem>
+                          </MenuList>
+                        </Menu>
+                      </HStack>
                     </Flex>
                   );
                 })}
@@ -443,11 +597,49 @@ export default function TransactionsPage() {
         </VStack>
       )}
 
-      {/* Modal Nova Transacao */}
+      {/* Floating Action Bar for Bulk Tagging / Edit */}
+      {selectedIds.length > 0 && (
+        <Box 
+          position="fixed" 
+          bottom="24px" 
+          left="50%" 
+          transform="translateX(-50%)" 
+          bg={useColorModeValue('gray.900', 'gray.800')} 
+          color="white" 
+          px={6} 
+          py={4} 
+          borderRadius="2xl" 
+          shadow="2xl" 
+          zIndex={100}
+          w={{ base: '90%', md: '600px' }}
+        >
+          <Flex justify="space-between" align="center">
+            <HStack spacing={2}>
+              <Icon as={FiCheckSquare} color="emerald.400" boxSize={5} />
+              <Text fontWeight="bold" fontSize="sm">
+                {selectedIds.length} transaç{selectedIds.length > 1 ? 'ões selecionadas' : 'ão selecionada'}
+              </Text>
+            </HStack>
+            
+            <HStack spacing={3}>
+              <Button size="sm" colorScheme="emerald" borderRadius="xl" onClick={onBulkOpen}>
+                Classificar / Tagear em Massa
+              </Button>
+              <Button size="sm" variant="ghost" color="gray.400" _hover={{ color: 'white' }} onClick={() => setSelectedIds([])}>
+                Cancelar
+              </Button>
+            </HStack>
+          </Flex>
+        </Box>
+      )}
+
+      {/* Modal Criar / Editar Transação Individual */}
       <Modal isOpen={isOpen} onClose={onClose} isCentered size="lg">
         <ModalOverlay backdropFilter="blur(5px)" />
         <ModalContent borderRadius="2xl" p={2}>
-          <ModalHeader fontWeight="bold">Adicionar Nova Transação</ModalHeader>
+          <ModalHeader fontWeight="bold">
+            {editingTx ? 'Editar / Tagear Transação' : 'Adicionar Nova Transação'}
+          </ModalHeader>
           <ModalCloseButton borderRadius="full" />
           <ModalBody>
             <VStack spacing={4}>
@@ -489,7 +681,7 @@ export default function TransactionsPage() {
 
               <HStack spacing={4} w="full">
                 <FormControl flex={1} isRequired>
-                  <FormLabel>Banco / Conta</FormLabel>
+                  <FormLabel>Banco / Conta Bancária</FormLabel>
                   <Select
                     value={formData.accountId}
                     onChange={(e) => setFormData({...formData, accountId: e.target.value})}
@@ -500,7 +692,7 @@ export default function TransactionsPage() {
                 </FormControl>
 
                 <FormControl flex={1}>
-                  <FormLabel>Categoria</FormLabel>
+                  <FormLabel>Categoria Principal</FormLabel>
                   <Select
                     value={formData.categoryId}
                     onChange={(e) => setFormData({...formData, categoryId: e.target.value})}
@@ -512,7 +704,7 @@ export default function TransactionsPage() {
               </HStack>
 
               <FormControl>
-                <FormLabel>Subtag de Categoria (Opcional)</FormLabel>
+                <FormLabel>Subtag de Categoria</FormLabel>
                 <Input 
                   placeholder="Ex: Ifood, Uber, Fatura Cartão, Projeto A"
                   value={formData.subtag} 
@@ -536,7 +728,65 @@ export default function TransactionsPage() {
           <ModalFooter gap={3}>
             <Button variant="ghost" borderRadius="xl" onClick={onClose}>Cancelar</Button>
             <Button bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={handleSave}>
-              Salvar Lançamento
+              {editingTx ? 'Salvar Alterações' : 'Salvar Lançamento'}
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
+
+      {/* Modal Reclassificação em Massa */}
+      <Modal isOpen={isBulkOpen} onClose={onBulkClose} isCentered size="lg">
+        <ModalOverlay backdropFilter="blur(5px)" />
+        <ModalContent borderRadius="2xl" p={2}>
+          <ModalHeader fontWeight="bold">
+            Classificar {selectedIds.length} Transaç{selectedIds.length > 1 ? 'ões' : 'ão'} em Massa
+          </ModalHeader>
+          <ModalCloseButton borderRadius="full" />
+          <ModalBody>
+            <VStack spacing={4}>
+              <Text fontSize="sm" color="gray.500">
+                Selecione os campos que deseja alterar para todas as transações selecionadas.
+              </Text>
+
+              <FormControl>
+                <FormLabel>Alterar Banco / Conta</FormLabel>
+                <Select
+                  value={bulkAccountId}
+                  onChange={(e) => setBulkAccountId(e.target.value)}
+                  borderRadius="xl"
+                >
+                  <option value="">-- Não alterar banco --</option>
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.bankName || a.name}</option>)}
+                </Select>
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Alterar Categoria Principal</FormLabel>
+                <Select
+                  value={bulkCategoryId}
+                  onChange={(e) => setBulkCategoryId(e.target.value)}
+                  borderRadius="xl"
+                >
+                  <option value="">-- Não alterar categoria --</option>
+                  {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                </Select>
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Atribuir Subtag de Categoria</FormLabel>
+                <Input
+                  placeholder="Ex: Fatura Nubank, Viagem Julho, Alimentação"
+                  value={bulkSubtag}
+                  onChange={(e) => setBulkSubtag(e.target.value)}
+                  borderRadius="xl"
+                />
+              </FormControl>
+            </VStack>
+          </ModalBody>
+          <ModalFooter gap={3}>
+            <Button variant="ghost" borderRadius="xl" onClick={onBulkClose}>Cancelar</Button>
+            <Button bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" isLoading={isBulkUpdating} onClick={handleApplyBulkUpdate}>
+              Aplicar em Massa
             </Button>
           </ModalFooter>
         </ModalContent>
