@@ -34,7 +34,12 @@ import {
   MenuButton,
   MenuList,
   MenuItem,
-  Tooltip,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  SimpleGrid,
 } from '@chakra-ui/react';
 import {
   FiPlus,
@@ -48,7 +53,8 @@ import {
   FiTrash2,
   FiMoreVertical,
   FiCheckSquare,
-  FiTag,
+  FiFolder,
+  FiLayers,
 } from 'react-icons/fi';
 import { api } from '@/lib/api';
 
@@ -74,15 +80,28 @@ interface Transaction {
   account?: Account | string;
   accountId?: string;
   subtag?: string;
-  tags?: string[];
+  importBatchId?: string;
   date: string;
+}
+
+interface ImportLog {
+  ID: number;
+  BatchID: string;
+  FileName: string;
+  FileType: string;
+  AccountID: string;
+  Subtag: string;
+  TotalTransactions: number;
+  CreatedAt: string;
 }
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [importLogs, setImportLogs] = useState<ImportLog[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingLogs, setIsLoadingLogs] = useState(false);
 
   // Filters State
   const [periodMode, setPeriodMode] = useState<'MONTHLY' | 'ANNUAL'>('MONTHLY');
@@ -98,10 +117,17 @@ export default function TransactionsPage() {
   const [bulkSubtag, setBulkSubtag] = useState('');
   const [isBulkUpdating, setIsBulkUpdating] = useState(false);
 
+  // OFX Batch Edit State
+  const [editingBatch, setEditingBatch] = useState<ImportLog | null>(null);
+  const [editBatchAccountId, setEditBatchAccountId] = useState('');
+  const [editBatchSubtag, setEditBatchSubtag] = useState('');
+  const [isUpdatingBatch, setIsUpdatingBatch] = useState(false);
+
   // Modals State
   const { isOpen, onOpen, onClose } = useDisclosure(); // Create/Edit Modal
   const { isOpen: isOfxOpen, onOpen: onOfxOpen, onClose: onOfxClose } = useDisclosure();
   const { isOpen: isBulkOpen, onOpen: onBulkOpen, onClose: onBulkClose } = useDisclosure();
+  const { isOpen: isBatchEditOpen, onOpen: onBatchEditOpen, onClose: onBatchEditClose } = useDisclosure();
 
   const [editingTx, setEditingTx] = useState<Transaction | null>(null);
 
@@ -170,8 +196,26 @@ export default function TransactionsPage() {
     }
   };
 
+  const fetchImportLogs = async () => {
+    setIsLoadingLogs(true);
+    try {
+      const res = await api.get('/integrations/import/history');
+      if (Array.isArray(res.data)) {
+        setImportLogs(res.data);
+      } else {
+        setImportLogs([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch import logs', error);
+      setImportLogs([]);
+    } finally {
+      setIsLoadingLogs(false);
+    }
+  };
+
   useEffect(() => {
     fetchData();
+    fetchImportLogs();
   }, [periodMode, selectedMonth, selectedYear, selectedAccountId, selectedSubtag]);
 
   const handleOpenCreateModal = () => {
@@ -231,7 +275,7 @@ export default function TransactionsPage() {
       onClose();
       fetchData();
     } catch (error: any) {
-      console.error('Failed to save transaction to backend', error);
+      console.error('Failed to save transaction', error);
       toast({ title: 'Erro ao salvar transação', status: 'error', duration: 4000 });
     }
   };
@@ -264,18 +308,54 @@ export default function TransactionsPage() {
       });
       toast({
         title: 'Extrato OFX importado com sucesso!',
-        description: `${res.data?.inserted ?? 0} transações vinculadas ao banco e tageadas.`,
+        description: `${res.data?.inserted ?? 0} transações cadastradas no banco selecionado.`,
         status: 'success',
         duration: 4000,
       });
       onOfxClose();
       fetchData();
+      fetchImportLogs();
     } catch (error: any) {
       console.error('Erro ao importar OFX:', error);
       toast({ title: 'Erro ao importar extrato OFX', status: 'error', duration: 4000 });
     } finally {
       setIsUploadingOfx(false);
       setOfxFile(null);
+    }
+  };
+
+  // Open Edit OFX Batch Modal
+  const handleOpenBatchEditModal = (log: ImportLog) => {
+    setEditingBatch(log);
+    setEditBatchAccountId(log.AccountID || (accounts.length > 0 ? accounts[0].id : ''));
+    setEditBatchSubtag(log.Subtag || '');
+    onBatchEditOpen();
+  };
+
+  // Execute OFX Batch Reclassification
+  const handleSaveBatchEdit = async () => {
+    if (!editingBatch) return;
+    setIsUpdatingBatch(true);
+    try {
+      await api.patch(`/integrations/import/history/${editingBatch.BatchID}`, {
+        accountId: editBatchAccountId,
+        subtag: editBatchSubtag,
+      });
+
+      toast({
+        title: 'Extrato OFX Reclassificado!',
+        description: `Todas as transações do extrato ${editingBatch.FileName} foram atualizadas para o novo banco.`,
+        status: 'success',
+        duration: 4000,
+      });
+      onBatchEditClose();
+      fetchData();
+      fetchImportLogs();
+    } catch (error) {
+      console.error('Failed to update OFX batch', error);
+      toast({ title: 'Erro ao reclassificar extrato OFX', status: 'error', duration: 4000 });
+    } finally {
+      setIsUpdatingBatch(false);
     }
   };
 
@@ -332,13 +412,17 @@ export default function TransactionsPage() {
     return cat.name;
   };
 
-  const getAccountInfo = (acc?: Account | string) => {
-    if (!acc) return { name: 'Conta Principal', bankName: 'Banco Geral', color: '#10B981' };
-    if (typeof acc === 'string') return { name: acc, bankName: 'Banco Geral', color: '#10B981' };
+  const getAccountInfo = (accOrId?: Account | string) => {
+    if (!accOrId) return { name: 'Conta Principal', bankName: 'Banco Geral', color: '#10B981' };
+    if (typeof accOrId === 'string') {
+      const found = accounts.find(a => a.id === accOrId);
+      if (found) return { name: found.name, bankName: found.bankName || found.name, color: found.color || '#10B981' };
+      return { name: accOrId, bankName: 'Banco Geral', color: '#10B981' };
+    }
     return {
-      name: acc.name,
-      bankName: acc.bankName || acc.name,
-      color: acc.color || '#10B981',
+      name: accOrId.name,
+      bankName: accOrId.bankName || accOrId.name,
+      color: accOrId.color || '#10B981',
     };
   };
 
@@ -357,8 +441,8 @@ export default function TransactionsPage() {
       {/* Header */}
       <Flex direction={{ base: 'column', md: 'row' }} justify="space-between" align={{ base: 'stretch', md: 'center' }} gap={4} mb={6}>
         <Box>
-          <Heading size="lg" fontWeight="bold">Gestão & Tageamento de Transações</Heading>
-          <Text color="gray.500" fontSize="sm">Edite, classifique e adicione tags/bancos aos seus extratos importados</Text>
+          <Heading size="lg" fontWeight="bold">Gestão & Extratos OFX</Heading>
+          <Text color="gray.500" fontSize="sm">Altere o banco ou subtag de arquivos `.OFX` inteiros ou transações individuais</Text>
         </Box>
         
         <HStack spacing={3}>
@@ -371,233 +455,325 @@ export default function TransactionsPage() {
         </HStack>
       </Flex>
 
-      {/* Filter Bar */}
-      <Box bg={bg} p={4} borderRadius="2xl" borderWidth="1px" borderColor={borderColor} mb={6} shadow="sm">
-        <Flex direction={{ base: 'column', lg: 'row' }} gap={4} align={{ base: 'stretch', lg: 'center' }}>
-          <HStack spacing={2}>
-            <Icon as={FiFilter} color="gray.500" />
-            <Text fontSize="sm" fontWeight="bold">Filtros:</Text>
-          </HStack>
+      {/* Tabs */}
+      <Tabs variant="soft-rounded" colorScheme="emerald" mb={6}>
+        <TabList bg={bg} p={1.5} borderRadius="2xl" borderWidth="1px" borderColor={borderColor}>
+          <Tab borderRadius="xl" fontWeight="bold" fontSize="sm">
+            <Icon as={FiLayers} mr={2} /> Todas as Transações ({transactions.length})
+          </Tab>
+          <Tab borderRadius="xl" fontWeight="bold" fontSize="sm">
+            <Icon as={FiFolder} mr={2} /> Extratos OFX Importados ({importLogs.length})
+          </Tab>
+        </TabList>
 
-          {/* Selection Checkbox Header */}
-          {transactions.length > 0 && (
-            <Checkbox 
-              isChecked={allSelected} 
-              isIndeterminate={selectedIds.length > 0 && !allSelected} 
-              onChange={(e) => handleSelectAll(e.target.checked)}
-              colorScheme="emerald"
-            >
-              <Text fontSize="xs" fontWeight="bold" color="gray.500">Selecionar Todos</Text>
-            </Checkbox>
-          )}
+        <TabPanels mt={4}>
+          {/* TAB 1: TRANSAÇÕES */}
+          <TabPanel p={0}>
+            {/* Filter Bar */}
+            <Box bg={bg} p={4} borderRadius="2xl" borderWidth="1px" borderColor={borderColor} mb={6} shadow="sm">
+              <Flex direction={{ base: 'column', lg: 'row' }} gap={4} align={{ base: 'stretch', lg: 'center' }}>
+                <HStack spacing={2}>
+                  <Icon as={FiFilter} color="gray.500" />
+                  <Text fontSize="sm" fontWeight="bold">Filtros:</Text>
+                </HStack>
 
-          {/* Period Mode */}
-          <Select 
-            value={periodMode} 
-            onChange={(e) => setPeriodMode(e.target.value as 'MONTHLY' | 'ANNUAL')} 
-            w={{ base: 'full', lg: '160px' }} 
-            borderRadius="xl" 
-            size="sm"
-          >
-            <option value="MONTHLY">Visão Mensal</option>
-            <option value="ANNUAL">Visão Anual</option>
-          </Select>
+                {transactions.length > 0 && (
+                  <Checkbox 
+                    isChecked={allSelected} 
+                    isIndeterminate={selectedIds.length > 0 && !allSelected} 
+                    onChange={(e) => handleSelectAll(e.target.checked)}
+                    colorScheme="emerald"
+                  >
+                    <Text fontSize="xs" fontWeight="bold" color="gray.500">Selecionar Todos</Text>
+                  </Checkbox>
+                )}
 
-          {/* Month Selector */}
-          {periodMode === 'MONTHLY' && (
-            <Select 
-              value={selectedMonth} 
-              onChange={(e) => setSelectedMonth(e.target.value)} 
-              w={{ base: 'full', lg: '140px' }} 
-              borderRadius="xl" 
-              size="sm"
-            >
-              <option value="1">Janeiro</option>
-              <option value="2">Fevereiro</option>
-              <option value="3">Março</option>
-              <option value="4">Abril</option>
-              <option value="5">Maio</option>
-              <option value="6">Junho</option>
-              <option value="7">Julho</option>
-              <option value="8">Agosto</option>
-              <option value="9">Setembro</option>
-              <option value="10">Outubro</option>
-              <option value="11">Novembro</option>
-              <option value="12">Dezembro</option>
-            </Select>
-          )}
+                <Select 
+                  value={periodMode} 
+                  onChange={(e) => setPeriodMode(e.target.value as 'MONTHLY' | 'ANNUAL')} 
+                  w={{ base: 'full', lg: '160px' }} 
+                  borderRadius="xl" 
+                  size="sm"
+                >
+                  <option value="MONTHLY">Visão Mensal</option>
+                  <option value="ANNUAL">Visão Anual</option>
+                </Select>
 
-          {/* Year Selector */}
-          <Select 
-            value={selectedYear} 
-            onChange={(e) => setSelectedYear(e.target.value)} 
-            w={{ base: 'full', lg: '110px' }} 
-            borderRadius="xl" 
-            size="sm"
-          >
-            <option value="2026">2026</option>
-            <option value="2025">2025</option>
-            <option value="2024">2024</option>
-          </Select>
+                {periodMode === 'MONTHLY' && (
+                  <Select 
+                    value={selectedMonth} 
+                    onChange={(e) => setSelectedMonth(e.target.value)} 
+                    w={{ base: 'full', lg: '140px' }} 
+                    borderRadius="xl" 
+                    size="sm"
+                  >
+                    <option value="1">Janeiro</option>
+                    <option value="2">Fevereiro</option>
+                    <option value="3">Março</option>
+                    <option value="4">Abril</option>
+                    <option value="5">Maio</option>
+                    <option value="6">Junho</option>
+                    <option value="7">Julho</option>
+                    <option value="8">Agosto</option>
+                    <option value="9">Setembro</option>
+                    <option value="10">Outubro</option>
+                    <option value="11">Novembro</option>
+                    <option value="12">Dezembro</option>
+                  </Select>
+                )}
 
-          {/* Bank Filter */}
-          <Select 
-            value={selectedAccountId} 
-            onChange={(e) => setSelectedAccountId(e.target.value)} 
-            w={{ base: 'full', lg: '180px' }} 
-            borderRadius="xl" 
-            size="sm"
-          >
-            <option value="">Todos os Bancos</option>
-            {accounts.map(a => (
-              <option key={a.id} value={a.id}>{a.bankName || a.name}</option>
-            ))}
-          </Select>
+                <Select 
+                  value={selectedYear} 
+                  onChange={(e) => setSelectedYear(e.target.value)} 
+                  w={{ base: 'full', lg: '110px' }} 
+                  borderRadius="xl" 
+                  size="sm"
+                >
+                  <option value="2026">2026</option>
+                  <option value="2025">2025</option>
+                  <option value="2024">2024</option>
+                </Select>
 
-          {/* Subtag Filter */}
-          <Input 
-            placeholder="Filtrar por Subtag (ex: Ifood)" 
-            value={selectedSubtag} 
-            onChange={(e) => setSelectedSubtag(e.target.value)} 
-            w={{ base: 'full', lg: '200px' }} 
-            borderRadius="xl" 
-            size="sm"
-          />
-        </Flex>
-      </Box>
+                <Select 
+                  value={selectedAccountId} 
+                  onChange={(e) => setSelectedAccountId(e.target.value)} 
+                  w={{ base: 'full', lg: '180px' }} 
+                  borderRadius="xl" 
+                  size="sm"
+                >
+                  <option value="">Todos os Bancos</option>
+                  {accounts.map(a => (
+                    <option key={a.id} value={a.id}>{a.bankName || a.name}</option>
+                  ))}
+                </Select>
 
-      {/* Transactions List */}
-      {isLoading ? (
-        <Flex justify="center" p={10}><Spinner color="emerald.500" size="xl" /></Flex>
-      ) : transactions.length === 0 ? (
-        <Flex direction="column" align="center" justify="center" minH="280px" bg={bg} borderRadius="2xl" borderWidth="1px" borderColor={borderColor} p={8}>
-          <Icon as={FiInbox} boxSize={12} color="gray.400" mb={3} />
-          <Text fontSize="lg" fontWeight="bold">Nenhuma transação encontrada</Text>
-          <Text fontSize="sm" color="gray.500" mb={6} textAlign="center" maxW="400px">
-            Seu extrato está vazio no filtro atual. Importe um extrato `.OFX` ou adicione uma transação manual.
-          </Text>
-          <HStack spacing={4}>
-            <Button leftIcon={<FiUploadCloud />} colorScheme="blue" variant="outline" borderRadius="xl" onClick={onOfxOpen}>
-              Importar Extrato .OFX
-            </Button>
-            <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={handleOpenCreateModal}>
-              Criar Lançamento
-            </Button>
-          </HStack>
-        </Flex>
-      ) : (
-        <VStack spacing={6} align="stretch">
-          {Object.entries(groupedTransactions).map(([date, items]) => (
-            <Box key={date}>
-              <Text fontSize="xs" fontWeight="bold" color="gray.500" mb={3} textTransform="uppercase" letterSpacing="wider">
-                {date}
-              </Text>
-              <VStack spacing={3} align="stretch">
-                {items.map(t => {
-                  const accInfo = getAccountInfo(t.account);
-                  const isSelected = selectedIds.includes(t.id);
+                <Input 
+                  placeholder="Filtrar por Subtag (ex: Ifood)" 
+                  value={selectedSubtag} 
+                  onChange={(e) => setSelectedSubtag(e.target.value)} 
+                  w={{ base: 'full', lg: '200px' }} 
+                  borderRadius="xl" 
+                  size="sm"
+                />
+              </Flex>
+            </Box>
+
+            {/* Transactions List */}
+            {isLoading ? (
+              <Flex justify="center" p={10}><Spinner color="emerald.500" size="xl" /></Flex>
+            ) : transactions.length === 0 ? (
+              <Flex direction="column" align="center" justify="center" minH="280px" bg={bg} borderRadius="2xl" borderWidth="1px" borderColor={borderColor} p={8}>
+                <Icon as={FiInbox} boxSize={12} color="gray.400" mb={3} />
+                <Text fontSize="lg" fontWeight="bold">Nenhuma transação encontrada</Text>
+                <Text fontSize="sm" color="gray.500" mb={6} textAlign="center" maxW="400px">
+                  Seu extrato está vazio no filtro atual. Importe um extrato `.OFX` ou adicione uma transação manual.
+                </Text>
+                <HStack spacing={4}>
+                  <Button leftIcon={<FiUploadCloud />} colorScheme="blue" variant="outline" borderRadius="xl" onClick={onOfxOpen}>
+                    Importar Extrato .OFX
+                  </Button>
+                  <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={handleOpenCreateModal}>
+                    Criar Lançamento
+                  </Button>
+                </HStack>
+              </Flex>
+            ) : (
+              <VStack spacing={6} align="stretch">
+                {Object.entries(groupedTransactions).map(([date, items]) => (
+                  <Box key={date}>
+                    <Text fontSize="xs" fontWeight="bold" color="gray.500" mb={3} textTransform="uppercase" letterSpacing="wider">
+                      {date}
+                    </Text>
+                    <VStack spacing={3} align="stretch">
+                      {items.map(t => {
+                        const accInfo = getAccountInfo(t.account);
+                        const isSelected = selectedIds.includes(t.id);
+
+                        return (
+                          <Flex 
+                            key={t.id} 
+                            bg={isSelected ? useColorModeValue('emerald.50', 'gray.700') : bg} 
+                            p={4} 
+                            borderRadius="2xl" 
+                            borderWidth="1px" 
+                            borderColor={isSelected ? '#10B981' : borderColor}
+                            align="center"
+                            justify="space-between"
+                            shadow="sm"
+                            transition="all 0.2s"
+                            _hover={{ boxShadow: 'md' }}
+                          >
+                            <Flex align="center">
+                              <Checkbox 
+                                isChecked={isSelected} 
+                                onChange={() => handleToggleSelect(t.id)} 
+                                colorScheme="emerald" 
+                                mr={4}
+                              />
+
+                              <Flex 
+                                bg={t.type === 'INCOME' ? 'emerald.100' : 'red.100'} 
+                                p={3} 
+                                borderRadius="xl" 
+                                mr={4}
+                              >
+                                <Icon 
+                                  as={t.type === 'INCOME' ? FiArrowUpRight : FiArrowDownRight} 
+                                  color={t.type === 'INCOME' ? 'emerald.600' : 'red.600'} 
+                                  boxSize={5} 
+                                />
+                              </Flex>
+
+                              <Box>
+                                <HStack spacing={2} mb={1}>
+                                  <Text fontWeight="bold">{t.description}</Text>
+                                  <Badge 
+                                    bg={`${accInfo.color}20`} 
+                                    style={{ color: accInfo.color }} 
+                                    borderRadius="full" 
+                                    px={2.5} 
+                                    py={0.5} 
+                                    fontSize="xs"
+                                    fontWeight="bold"
+                                  >
+                                    {accInfo.bankName}
+                                  </Badge>
+                                </HStack>
+                                <HStack spacing={2}>
+                                  <Badge colorScheme="gray" fontSize="xs" borderRadius="md">
+                                    {getCategoryName(t.category)}
+                                  </Badge>
+                                  {t.subtag && (
+                                    <Tag size="sm" colorScheme="purple" borderRadius="full">
+                                      <TagLabel>#{t.subtag}</TagLabel>
+                                    </Tag>
+                                  )}
+                                </HStack>
+                              </Box>
+                            </Flex>
+
+                            <HStack spacing={4}>
+                              <Text 
+                                fontWeight="bold" 
+                                fontSize="lg"
+                                color={t.type === 'INCOME' ? 'emerald.500' : 'red.500'}
+                              >
+                                {t.type === 'INCOME' ? '+' : '-'}{formatCurrency(t.amount)}
+                              </Text>
+
+                              <Menu>
+                                <MenuButton
+                                  as={IconButton}
+                                  icon={<FiMoreVertical />}
+                                  variant="ghost"
+                                  size="sm"
+                                  borderRadius="lg"
+                                  aria-label="Opções"
+                                />
+                                <MenuList borderRadius="xl">
+                                  <MenuItem icon={<FiEdit2 />} onClick={() => handleOpenEditModal(t)}>
+                                    Editar / Tagear
+                                  </MenuItem>
+                                  <MenuItem icon={<FiTrash2 />} color="red.400" onClick={() => handleDeleteTx(t.id)}>
+                                    Excluir Lançamento
+                                  </MenuItem>
+                                </MenuList>
+                              </Menu>
+                            </HStack>
+                          </Flex>
+                        );
+                      })}
+                    </VStack>
+                  </Box>
+                ))}
+              </VStack>
+            )}
+          </TabPanel>
+
+          {/* TAB 2: HISTÓRICO DE EXTRATOS OFX */}
+          <TabPanel p={0}>
+            {isLoadingLogs ? (
+              <Flex justify="center" p={10}><Spinner color="emerald.500" size="xl" /></Flex>
+            ) : importLogs.length === 0 ? (
+              <Flex direction="column" align="center" justify="center" minH="280px" bg={bg} borderRadius="2xl" borderWidth="1px" borderColor={borderColor} p={8}>
+                <Icon as={FiFileText} boxSize={12} color="gray.400" mb={3} />
+                <Text fontSize="lg" fontWeight="bold">Nenhum extrato OFX importado</Text>
+                <Text fontSize="sm" color="gray.500" mb={4}>Importe um arquivo `.OFX` do seu banco para gerenciá-lo como um lote único.</Text>
+                <Button leftIcon={<FiUploadCloud />} colorScheme="blue" borderRadius="xl" onClick={onOfxOpen}>
+                  Importar Primeiro Extrato
+                </Button>
+              </Flex>
+            ) : (
+              <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
+                {importLogs.map(log => {
+                  const accInfo = getAccountInfo(log.AccountID);
+                  const formattedDate = log.CreatedAt ? new Date(log.CreatedAt).toLocaleString('pt-BR') : 'Data recente';
 
                   return (
-                    <Flex 
-                      key={t.id} 
-                      bg={isSelected ? useColorModeValue('emerald.50', 'gray.700') : bg} 
-                      p={4} 
+                    <Box 
+                      key={log.ID} 
+                      bg={bg} 
+                      p={6} 
                       borderRadius="2xl" 
                       borderWidth="1px" 
-                      borderColor={isSelected ? '#10B981' : borderColor}
-                      align="center"
-                      justify="space-between"
+                      borderColor={borderColor}
                       shadow="sm"
-                      transition="all 0.2s"
-                      _hover={{ boxShadow: 'md' }}
+                      position="relative"
                     >
-                      <Flex align="center">
-                        <Checkbox 
-                          isChecked={isSelected} 
-                          onChange={() => handleToggleSelect(t.id)} 
-                          colorScheme="emerald" 
-                          mr={4}
-                        />
-
-                        <Flex 
-                          bg={t.type === 'INCOME' ? 'emerald.100' : 'red.100'} 
-                          p={3} 
-                          borderRadius="xl" 
-                          mr={4}
-                        >
-                          <Icon 
-                            as={t.type === 'INCOME' ? FiArrowUpRight : FiArrowDownRight} 
-                            color={t.type === 'INCOME' ? 'emerald.600' : 'red.600'} 
-                            boxSize={5} 
-                          />
+                      <Flex justify="space-between" align="start" mb={3}>
+                        <Flex align="center">
+                          <Flex bg="blue.100" p={3} borderRadius="xl" mr={3}>
+                            <Icon as={FiFileText} color="blue.600" boxSize={6} />
+                          </Flex>
+                          <Box>
+                            <Text fontWeight="bold" fontSize="md" noOfLines={1}>{log.FileName}</Text>
+                            <Text fontSize="xs" color="gray.400">{formattedDate}</Text>
+                          </Box>
                         </Flex>
-
-                        <Box>
-                          <HStack spacing={2} mb={1}>
-                            <Text fontWeight="bold">{t.description}</Text>
-                            <Badge 
-                              bg={`${accInfo.color}20`} 
-                              style={{ color: accInfo.color }} 
-                              borderRadius="full" 
-                              px={2.5} 
-                              py={0.5} 
-                              fontSize="xs"
-                              fontWeight="bold"
-                            >
-                              {accInfo.bankName}
-                            </Badge>
-                          </HStack>
-                          <HStack spacing={2}>
-                            <Badge colorScheme="gray" fontSize="xs" borderRadius="md">
-                              {getCategoryName(t.category)}
-                            </Badge>
-                            {t.subtag && (
-                              <Tag size="sm" colorScheme="purple" borderRadius="full">
-                                <TagLabel>#{t.subtag}</TagLabel>
-                              </Tag>
-                            )}
-                          </HStack>
-                        </Box>
                       </Flex>
 
-                      <HStack spacing={4}>
-                        <Text 
-                          fontWeight="bold" 
-                          fontSize="lg"
-                          color={t.type === 'INCOME' ? 'emerald.500' : 'red.500'}
-                        >
-                          {t.type === 'INCOME' ? '+' : '-'}{formatCurrency(t.amount)}
-                        </Text>
+                      <VStack align="stretch" spacing={2} my={4} bg={useColorModeValue('gray.50', 'gray.900')} p={3} borderRadius="xl" fontSize="xs">
+                        <Flex justify="space-between">
+                          <Text color="gray.500">Transações Lidas:</Text>
+                          <Text fontWeight="bold">{log.TotalTransactions} lançamentos</Text>
+                        </Flex>
+                        <Flex justify="space-between" align="center">
+                          <Text color="gray.500">Banco Vinculado:</Text>
+                          <Badge bg={`${accInfo.color}20`} style={{ color: accInfo.color }} borderRadius="full" px={2} py={0.5}>
+                            {accInfo.bankName}
+                          </Badge>
+                        </Flex>
+                        {log.Subtag && (
+                          <Flex justify="space-between" align="center">
+                            <Text color="gray.500">Subtag do Extrato:</Text>
+                            <Tag size="sm" colorScheme="purple" borderRadius="full">
+                              <TagLabel>#{log.Subtag}</TagLabel>
+                            </Tag>
+                          </Flex>
+                        )}
+                      </VStack>
 
-                        <Menu>
-                          <MenuButton
-                            as={IconButton}
-                            icon={<FiMoreVertical />}
-                            variant="ghost"
-                            size="sm"
-                            borderRadius="lg"
-                            aria-label="Opções"
-                          />
-                          <MenuList borderRadius="xl">
-                            <MenuItem icon={<FiEdit2 />} onClick={() => handleOpenEditModal(t)}>
-                              Editar / Tagear
-                            </MenuItem>
-                            <MenuItem icon={<FiTrash2 />} color="red.400" onClick={() => handleDeleteTx(t.id)}>
-                              Excluir Lançamento
-                            </MenuItem>
-                          </MenuList>
-                        </Menu>
-                      </HStack>
-                    </Flex>
+                      <Button 
+                        w="full" 
+                        size="sm" 
+                        leftIcon={<FiEdit2 />} 
+                        colorScheme="blue" 
+                        variant="outline" 
+                        borderRadius="xl"
+                        onClick={() => handleOpenBatchEditModal(log)}
+                      >
+                        Reclassificar Extrato Inteiro
+                      </Button>
+                    </Box>
                   );
                 })}
-              </VStack>
-            </Box>
-          ))}
-        </VStack>
-      )}
+              </SimpleGrid>
+            )}
+          </TabPanel>
+        </TabPanels>
+      </Tabs>
 
-      {/* Floating Action Bar for Bulk Tagging / Edit */}
+      {/* Floating Action Bar for Bulk Tagging */}
       {selectedIds.length > 0 && (
         <Box 
           position="fixed" 
@@ -632,6 +808,51 @@ export default function TransactionsPage() {
           </Flex>
         </Box>
       )}
+
+      {/* Modal Editar Extrato Inteiro (Batch) */}
+      <Modal isOpen={isBatchEditOpen} onClose={onBatchEditClose} isCentered size="lg">
+        <ModalOverlay backdropFilter="blur(5px)" />
+        <ModalContent borderRadius="2xl" p={2}>
+          <ModalHeader fontWeight="bold">
+            Reclassificar Extrato OFX Inteiro
+          </ModalHeader>
+          <ModalCloseButton borderRadius="full" />
+          <ModalBody>
+            <VStack spacing={4}>
+              <Text fontSize="sm" color="gray.500">
+                Altere o banco ou a subtag do extrato `{editingBatch?.FileName}`. Isso atualizará automaticamente todas as **{editingBatch?.TotalTransactions} transações** trazidas por este arquivo!
+              </Text>
+
+              <FormControl isRequired>
+                <FormLabel>Novo Banco / Conta Bancária</FormLabel>
+                <Select
+                  value={editBatchAccountId}
+                  onChange={(e) => setEditBatchAccountId(e.target.value)}
+                  borderRadius="xl"
+                >
+                  {accounts.map(a => <option key={a.id} value={a.id}>{a.bankName || a.name}</option>)}
+                </Select>
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Nova Subtag do Extrato (Opcional)</FormLabel>
+                <Input
+                  placeholder="Ex: Fatura Nubank, Viagem Julho, Extrato Itaú"
+                  value={editBatchSubtag}
+                  onChange={(e) => setEditBatchSubtag(e.target.value)}
+                  borderRadius="xl"
+                />
+              </FormControl>
+            </VStack>
+          </ModalBody>
+          <ModalFooter gap={3}>
+            <Button variant="ghost" borderRadius="xl" onClick={onBatchEditClose}>Cancelar</Button>
+            <Button bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" isLoading={isUpdatingBatch} onClick={handleSaveBatchEdit}>
+              Atualizar Todo o Extrato
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       {/* Modal Criar / Editar Transação Individual */}
       <Modal isOpen={isOpen} onClose={onClose} isCentered size="lg">
