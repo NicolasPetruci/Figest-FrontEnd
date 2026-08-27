@@ -50,7 +50,6 @@ import {
   FiTrendingUp,
   FiBriefcase,
   FiLink,
-  FiBriefcase as FiBank,
 } from 'react-icons/fi';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -84,7 +83,10 @@ const PRESET_BANKS = [
   { name: 'Banco Inter', color: '#FF7A00' },
   { name: 'C6 Bank', color: '#1B1B1B' },
   { name: 'Caixa Econômica', color: '#005CA9' },
-  { name: 'Outro Banco / Carteira', color: '#10B981' },
+  { name: 'Mercado Pago', color: '#00A8E8' },
+  { name: 'BTG Pactual', color: '#00204A' },
+  { name: 'Wise / Nomad', color: '#2563EB' },
+  { name: 'CUSTOM', label: '➕ Outro Banco / Personalizado', color: '#10B981' },
 ];
 
 const ACCOUNT_TYPE_LABELS: Record<AccountType, { label: string; icon: any }> = {
@@ -109,7 +111,8 @@ export default function AccountsPage() {
 
   // Form Fields
   const [name, setName] = useState('');
-  const [bankName, setBankName] = useState('Banco Nubank');
+  const [bankSelect, setBankSelect] = useState('Banco Nubank');
+  const [customBankName, setCustomBankName] = useState('');
   const [agency, setAgency] = useState('');
   const [accountNumber, setAccountNumber] = useState('');
   const [type, setType] = useState<AccountType>('CHECKING');
@@ -141,16 +144,19 @@ export default function AccountsPage() {
     fetchAccounts();
   }, []);
 
-  const handleBankSelect = (selectedName: string) => {
-    setBankName(selectedName);
-    const found = PRESET_BANKS.find(b => b.name === selectedName);
-    if (found) setColor(found.color);
+  const handleBankSelectChange = (val: string) => {
+    setBankSelect(val);
+    if (val !== 'CUSTOM') {
+      const found = PRESET_BANKS.find(b => b.name === val);
+      if (found) setColor(found.color);
+    }
   };
 
   const handleOpenCreateModal = () => {
     setEditingAccount(null);
     setName('');
-    setBankName('Banco Nubank');
+    setBankSelect('Banco Nubank');
+    setCustomBankName('');
     setAgency('');
     setAccountNumber('');
     setType('CHECKING');
@@ -162,7 +168,14 @@ export default function AccountsPage() {
   const handleOpenEditModal = (acc: Account) => {
     setEditingAccount(acc);
     setName(acc.name);
-    setBankName(acc.bankName || 'Banco Nubank');
+    const found = PRESET_BANKS.find(b => b.name === acc.bankName);
+    if (found) {
+      setBankSelect(acc.bankName);
+      setCustomBankName('');
+    } else {
+      setBankSelect('CUSTOM');
+      setCustomBankName(acc.bankName || '');
+    }
     setAgency(acc.agency || '');
     setAccountNumber(acc.accountNumber || '');
     setType(acc.type);
@@ -172,8 +185,9 @@ export default function AccountsPage() {
   };
 
   const handleSave = async () => {
-    if (!name.trim()) {
-      toast({ title: 'Informe o nome da conta', status: 'warning', duration: 3000 });
+    const finalBankName = bankSelect === 'CUSTOM' ? customBankName.trim() : bankSelect;
+    if (!name.trim() || !finalBankName) {
+      toast({ title: 'Informe o nome da conta e do banco', status: 'warning', duration: 3000 });
       return;
     }
 
@@ -181,7 +195,7 @@ export default function AccountsPage() {
     try {
       const payload = {
         name,
-        bankName,
+        bankName: finalBankName,
         agency,
         accountNumber,
         type,
@@ -267,7 +281,7 @@ export default function AccountsPage() {
         <Box>
           <Heading size="lg" fontWeight="bold">Cadastro de Bancos & Contas</Heading>
           <Text color="gray.500" fontSize="sm">
-            Gerencie suas contas manuais (Nubank, Santander, PicPay, etc.) e integrações Open Finance
+            Cadastre qualquer banco ou instituição financeira manual ou via Open Finance
           </Text>
         </Box>
         <HStack spacing={3}>
@@ -275,7 +289,7 @@ export default function AccountsPage() {
             Conectar Open Finance (Pluggy)
           </Button>
           <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={handleOpenCreateModal}>
-            Cadastrar Conta Bancária
+            Cadastrar Novo Banco
           </Button>
         </HStack>
       </Flex>
@@ -322,12 +336,12 @@ export default function AccountsPage() {
       ) : accounts.length === 0 ? (
         <Flex direction="column" align="center" justify="center" h="240px" bg={cardBg} borderRadius="2xl" borderWidth="1px" borderColor={borderColor} p={6}>
           <Icon as={FiCreditCard} boxSize={12} color="gray.400" mb={3} />
-          <Text fontWeight="bold" fontSize="lg">Nenhuma conta bancária cadastrada</Text>
+          <Text fontWeight="bold" fontSize="lg">Nenhum banco ou conta cadastrada</Text>
           <Text color="gray.500" fontSize="sm" mb={4} textAlign="center">
-            Cadastre suas contas manuais (Nubank, Santander, PicPay) com agência e conta para organizar suas transações.
+            Cadastre seus bancos (Nubank, Santander, PicPay, Itaú ou personalizado) para organizar e tagear seus extratos.
           </Text>
           <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={handleOpenCreateModal}>
-            Cadastrar Primeira Conta
+            Cadastrar Primeiro Banco
           </Button>
         </Flex>
       ) : (
@@ -360,7 +374,7 @@ export default function AccountsPage() {
                     </Flex>
                     <Box>
                       <Text fontWeight="bold" fontSize="lg">{account.name}</Text>
-                      <Badge bg={`${bankBgColor}15`} style={{ color: bankBgColor }} borderRadius="full" px={2.5} py={0.5} fontSize="xs" fontWeight="bold">
+                      <Badge bg={`${bankBgColor}20`} style={{ color: bankBgColor }} borderRadius="full" px={2.5} py={0.5} fontSize="xs" fontWeight="bold">
                         {account.bankName || 'Banco'}
                       </Badge>
                     </Box>
@@ -377,10 +391,10 @@ export default function AccountsPage() {
                     />
                     <MenuList borderRadius="xl">
                       <MenuItem icon={<FiEdit2 />} onClick={() => handleOpenEditModal(account)}>
-                        Editar Conta
+                        Editar Banco
                       </MenuItem>
                       <MenuItem icon={<FiTrash2 />} color="red.400" onClick={() => setDeleteId(account.id)}>
-                        Excluir Conta
+                        Excluir Banco
                       </MenuItem>
                     </MenuList>
                   </Menu>
@@ -405,35 +419,48 @@ export default function AccountsPage() {
         </SimpleGrid>
       )}
 
-      {/* Modal Criar / Editar Conta */}
+      {/* Modal Criar / Editar Banco */}
       <Modal isOpen={isOpen} onClose={onClose} isCentered size="lg">
         <ModalOverlay backdropFilter="blur(5px)" />
         <ModalContent borderRadius="2xl" p={2}>
           <ModalHeader fontWeight="bold">
-            {editingAccount ? 'Editar Conta Bancária' : 'Cadastrar Nova Conta Bancária'}
+            {editingAccount ? 'Editar Banco / Conta' : 'Cadastrar Novo Banco / Conta'}
           </ModalHeader>
           <ModalCloseButton borderRadius="full" />
           <ModalBody>
             <VStack spacing={4}>
               <FormControl isRequired>
-                <FormLabel>Instituição Bancária</FormLabel>
+                <FormLabel>Selecione a Instituição Bancária</FormLabel>
                 <Select 
-                  value={bankName} 
-                  onChange={(e) => handleBankSelect(e.target.value)} 
+                  value={bankSelect} 
+                  onChange={(e) => handleBankSelectChange(e.target.value)} 
                   borderRadius="xl"
                 >
                   {PRESET_BANKS.map(b => (
-                    <option key={b.name} value={b.name}>{b.name}</option>
+                    <option key={b.name} value={b.name}>{b.label || b.name}</option>
                   ))}
                 </Select>
               </FormControl>
 
+              {bankSelect === 'CUSTOM' && (
+                <FormControl isRequired>
+                  <FormLabel>Nome do Banco Personalizado</FormLabel>
+                  <Input 
+                    value={customBankName} 
+                    onChange={(e) => setCustomBankName(e.target.value)} 
+                    placeholder="Ex: Banco Sofisa, Nomad, Wise, BTG Pactual, Mercado Pago"
+                    borderRadius="xl"
+                    focusBorderColor="#10B981"
+                  />
+                </FormControl>
+              )}
+
               <FormControl isRequired>
-                <FormLabel>Nome da Conta / Identificação</FormLabel>
+                <FormLabel>Nome / Identificação da Conta</FormLabel>
                 <Input 
                   value={name} 
                   onChange={(e) => setName(e.target.value)} 
-                  placeholder="Ex: Nubank Conta Principal, Santander Cartão, PicPay Rendimentos"
+                  placeholder="Ex: Nubank Principal, Santander Cartão, PicPay Rendas"
                   borderRadius="xl"
                   focusBorderColor="#10B981"
                 />
@@ -477,6 +504,22 @@ export default function AccountsPage() {
               </FormControl>
 
               <FormControl isRequired>
+                <FormLabel>Cor da Marca do Banco</FormLabel>
+                <HStack spacing={3}>
+                  <Input 
+                    type="color" 
+                    value={color} 
+                    onChange={(e) => setColor(e.target.value)} 
+                    w="60px" 
+                    h="40px" 
+                    p={1} 
+                    borderRadius="lg" 
+                  />
+                  <Text fontSize="sm" color="gray.500">{color}</Text>
+                </HStack>
+              </FormControl>
+
+              <FormControl isRequired>
                 <FormLabel>Saldo Atual (R$)</FormLabel>
                 <Input 
                   type="number" 
@@ -492,7 +535,7 @@ export default function AccountsPage() {
           <ModalFooter gap={3}>
             <Button variant="ghost" borderRadius="xl" onClick={onClose}>Cancelar</Button>
             <Button bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" isLoading={isSaving} onClick={handleSave}>
-              {editingAccount ? 'Salvar Alterações' : 'Cadastrar Conta'}
+              {editingAccount ? 'Salvar Alterações' : 'Cadastrar Banco'}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -508,10 +551,10 @@ export default function AccountsPage() {
         <AlertDialogOverlay backdropFilter="blur(5px)">
           <AlertDialogContent borderRadius="2xl">
             <AlertDialogHeader fontSize="lg" fontWeight="bold">
-              Excluir Conta Bancária
+              Excluir Banco
             </AlertDialogHeader>
             <AlertDialogBody>
-              Tem certeza que deseja excluir esta conta bancária? As transações vinculadas continuarão registradas.
+              Tem certeza que deseja excluir esta conta bancária? As transações vinculadas continuarão registradas no histórico.
             </AlertDialogBody>
             <AlertDialogFooter gap={3}>
               <Button ref={cancelRef} variant="ghost" borderRadius="xl" onClick={() => setDeleteId(null)}>
