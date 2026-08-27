@@ -50,6 +50,7 @@ import {
   FiTrendingUp,
   FiBriefcase,
   FiLink,
+  FiBriefcase as FiBank,
 } from 'react-icons/fi';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/authStore';
@@ -61,27 +62,38 @@ const PluggyConnect = dynamic(
 
 export type AccountType = 'CHECKING' | 'SAVINGS' | 'CREDIT_CARD' | 'CASH' | 'INVESTMENT';
 
-interface Account {
+export interface Account {
   id: string;
   name: string;
+  bankName: string;
+  agency?: string;
+  accountNumber?: string;
   type: AccountType;
   balance: number;
   currency?: string;
+  color?: string;
 }
 
-const ACCOUNT_TYPE_LABELS: Record<AccountType, { label: string; color: string; icon: any }> = {
-  CHECKING: { label: 'Conta Corrente', color: 'blue', icon: FiCreditCard },
-  SAVINGS: { label: 'Poupança', color: 'green', icon: FiDollarSign },
-  CREDIT_CARD: { label: 'Cartão de Crédito', color: 'red', icon: FiCreditCard },
-  CASH: { label: 'Carteira / Dinheiro', color: 'amber', icon: FiBriefcase },
-  INVESTMENT: { label: 'Investimentos', color: 'purple', icon: FiTrendingUp },
-};
-
-const DEFAULT_ACCOUNTS: Account[] = [
-  { id: 'acc-1', name: 'Conta Principal Itaú', type: 'CHECKING', balance: 12400.50, currency: 'BRL' },
-  { id: 'acc-2', name: 'Reserva de Emergência Nubank', type: 'SAVINGS', balance: 3500.00, currency: 'BRL' },
-  { id: 'acc-3', name: 'Cartão C6 Bank Black', type: 'CREDIT_CARD', balance: -850.00, currency: 'BRL' },
+const PRESET_BANKS = [
+  { name: 'Banco Nubank', color: '#8A05BE' },
+  { name: 'Banco Santander', color: '#EC0000' },
+  { name: 'PicPay', color: '#21C25E' },
+  { name: 'Itaú Unibanco', color: '#EC7000' },
+  { name: 'Banco do Brasil', color: '#FFCC00' },
+  { name: 'Banco Bradesco', color: '#CC092F' },
+  { name: 'Banco Inter', color: '#FF7A00' },
+  { name: 'C6 Bank', color: '#1B1B1B' },
+  { name: 'Caixa Econômica', color: '#005CA9' },
+  { name: 'Outro Banco / Carteira', color: '#10B981' },
 ];
+
+const ACCOUNT_TYPE_LABELS: Record<AccountType, { label: string; icon: any }> = {
+  CHECKING: { label: 'Conta Corrente', icon: FiCreditCard },
+  SAVINGS: { label: 'Poupança / Reserva', icon: FiDollarSign },
+  CREDIT_CARD: { label: 'Cartão de Crédito', icon: FiCreditCard },
+  CASH: { label: 'Carteira / Espécie', icon: FiBriefcase },
+  INVESTMENT: { label: 'Investimentos', icon: FiTrendingUp },
+};
 
 export default function AccountsPage() {
   const user = useAuthStore((state) => state.user);
@@ -95,9 +107,14 @@ export default function AccountsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const cancelRef = React.useRef<any>(null);
 
+  // Form Fields
   const [name, setName] = useState('');
+  const [bankName, setBankName] = useState('Banco Nubank');
+  const [agency, setAgency] = useState('');
+  const [accountNumber, setAccountNumber] = useState('');
   const [type, setType] = useState<AccountType>('CHECKING');
   const [balance, setBalance] = useState('0');
+  const [color, setColor] = useState('#8A05BE');
 
   const toast = useToast();
   const cardBg = useColorModeValue('white', 'gray.800');
@@ -124,19 +141,33 @@ export default function AccountsPage() {
     fetchAccounts();
   }, []);
 
+  const handleBankSelect = (selectedName: string) => {
+    setBankName(selectedName);
+    const found = PRESET_BANKS.find(b => b.name === selectedName);
+    if (found) setColor(found.color);
+  };
+
   const handleOpenCreateModal = () => {
     setEditingAccount(null);
     setName('');
+    setBankName('Banco Nubank');
+    setAgency('');
+    setAccountNumber('');
     setType('CHECKING');
     setBalance('0');
+    setColor('#8A05BE');
     onOpen();
   };
 
   const handleOpenEditModal = (acc: Account) => {
     setEditingAccount(acc);
     setName(acc.name);
+    setBankName(acc.bankName || 'Banco Nubank');
+    setAgency(acc.agency || '');
+    setAccountNumber(acc.accountNumber || '');
     setType(acc.type);
     setBalance(String(acc.balance));
+    setColor(acc.color || '#10B981');
     onOpen();
   };
 
@@ -150,29 +181,27 @@ export default function AccountsPage() {
     try {
       const payload = {
         name,
+        bankName,
+        agency,
+        accountNumber,
         type,
         balance: Number(balance) || 0,
         currency: 'BRL',
+        color,
       };
 
       if (editingAccount) {
         await api.patch(`/finance/accounts/${editingAccount.id}`, payload);
-        toast({ title: 'Conta atualizada!', status: 'success', duration: 3000 });
+        toast({ title: 'Conta bancária atualizada!', status: 'success', duration: 3000 });
       } else {
         await api.post('/finance/accounts', payload);
-        toast({ title: 'Conta bancária criada com sucesso!', status: 'success', duration: 3000 });
+        toast({ title: 'Conta bancária cadastrada com sucesso!', status: 'success', duration: 3000 });
       }
       onClose();
       fetchAccounts();
-    } catch (error) {
+    } catch (error: any) {
       console.error('Failed to save account', error);
-      if (editingAccount) {
-        setAccounts(prev => prev.map(a => a.id === editingAccount.id ? { ...a, name, type, balance: Number(balance) } : a));
-      } else {
-        setAccounts(prev => [...prev, { id: `acc-${Date.now()}`, name, type, balance: Number(balance), currency: 'BRL' }]);
-      }
-      toast({ title: 'Conta salva!', status: 'info', duration: 3000 });
-      onClose();
+      toast({ title: 'Erro ao salvar conta bancária', status: 'error', duration: 4000 });
     } finally {
       setIsSaving(false);
     }
@@ -182,11 +211,11 @@ export default function AccountsPage() {
     if (!deleteId) return;
     try {
       await api.delete(`/finance/accounts/${deleteId}`);
-      toast({ title: 'Conta removida', status: 'success', duration: 3000 });
+      toast({ title: 'Conta removida com sucesso', status: 'success', duration: 3000 });
+      fetchAccounts();
     } catch (error) {
       console.error('Failed to delete account', error);
     } finally {
-      setAccounts(prev => prev.filter(a => a.id !== deleteId));
       setDeleteId(null);
     }
   };
@@ -208,7 +237,6 @@ export default function AccountsPage() {
           description: 'Selecione sua instituição bancária no widget.',
           status: 'success',
           duration: 4000,
-          isClosable: true,
         });
       } else {
         throw new Error(data.error || 'Token não retornado pela API da Pluggy');
@@ -220,7 +248,6 @@ export default function AccountsPage() {
         description: error?.message || 'Verifique se CLIENT_ID e CLIENT_SECRET estão configurados no .env',
         status: 'error',
         duration: 5000,
-        isClosable: true,
       });
     } finally {
       setIsConnecting(false);
@@ -238,20 +265,28 @@ export default function AccountsPage() {
       {/* Header */}
       <Flex direction={{ base: 'column', md: 'row' }} justify="space-between" align={{ base: 'stretch', md: 'center' }} gap={4} mb={6}>
         <Box>
-          <Heading size="lg" fontWeight="bold">Contas Bancárias & Open Finance</Heading>
+          <Heading size="lg" fontWeight="bold">Cadastro de Bancos & Contas</Heading>
           <Text color="gray.500" fontSize="sm">
-            Saldo Total Consolidado: <Text as="span" fontWeight="bold" color={totalBalance >= 0 ? 'emerald.500' : 'red.500'}>{formatCurrency(totalBalance)}</Text>
+            Gerencie suas contas manuais (Nubank, Santander, PicPay, etc.) e integrações Open Finance
           </Text>
         </Box>
         <HStack spacing={3}>
           <Button leftIcon={<Icon as={FiLink} />} colorScheme="blue" borderRadius="xl" onClick={handleConnectBank} isLoading={isConnecting}>
-            Conectar Banco (Pluggy)
+            Conectar Open Finance (Pluggy)
           </Button>
           <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={handleOpenCreateModal}>
-            Nova Conta
+            Cadastrar Conta Bancária
           </Button>
         </HStack>
       </Flex>
+
+      {/* Saldo Consolidado Card */}
+      <Box bg={cardBg} p={6} borderRadius="2xl" borderWidth="1px" borderColor={borderColor} mb={6} shadow="sm">
+        <Text color="gray.500" fontSize="sm" fontWeight="medium" mb={1}>Saldo Total Consolidado em Bancos</Text>
+        <Text fontSize="3xl" fontWeight="bold" color={totalBalance >= 0 ? 'emerald.500' : 'red.500'}>
+          {formatCurrency(totalBalance)}
+        </Text>
+      </Box>
 
       {/* Pluggy Connect Overlay Widget */}
       {connectToken && (
@@ -261,10 +296,9 @@ export default function AccountsPage() {
           onSuccess={(itemData) => {
             toast({
               title: 'Banco Conectado com Sucesso! 🎉',
-              description: `Sua conta foi conectada via Pluggy. ID: ${itemData.item.id}`,
+              description: `Conexão via Pluggy efetuada. ID: ${itemData.item.id}`,
               status: 'success',
               duration: 5000,
-              isClosable: true,
             });
             setConnectToken(null);
             fetchAccounts();
@@ -273,10 +307,9 @@ export default function AccountsPage() {
             console.error('Pluggy Connect Error:', error);
             toast({
               title: 'Falha na conexão bancária',
-              description: error.message || 'Ocorreu um erro durante a autenticação bancária',
+              description: error.message || 'Erro durante a autorização bancária',
               status: 'error',
               duration: 4000,
-              isClosable: true,
             });
           }}
           onClose={() => setConnectToken(null)}
@@ -287,15 +320,23 @@ export default function AccountsPage() {
       {isLoading ? (
         <Flex justify="center" p={10}><Spinner color="emerald.500" size="xl" /></Flex>
       ) : accounts.length === 0 ? (
-        <Flex direction="column" align="center" justify="center" h="200px" bg={cardBg} borderRadius="2xl" borderWidth="1px" borderColor={borderColor}>
-          <Icon as={FiCreditCard} boxSize={10} color="gray.500" mb={2} />
-          <Text color="gray.400">Nenhuma conta cadastrada. Adicione sua primeira conta bancária ou conecte via Pluggy.</Text>
+        <Flex direction="column" align="center" justify="center" h="240px" bg={cardBg} borderRadius="2xl" borderWidth="1px" borderColor={borderColor} p={6}>
+          <Icon as={FiCreditCard} boxSize={12} color="gray.400" mb={3} />
+          <Text fontWeight="bold" fontSize="lg">Nenhuma conta bancária cadastrada</Text>
+          <Text color="gray.500" fontSize="sm" mb={4} textAlign="center">
+            Cadastre suas contas manuais (Nubank, Santander, PicPay) com agência e conta para organizar suas transações.
+          </Text>
+          <Button leftIcon={<FiPlus />} bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" onClick={handleOpenCreateModal}>
+            Cadastrar Primeira Conta
+          </Button>
         </Flex>
       ) : (
         <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} spacing={6}>
           {accounts.map(account => {
-            const config = ACCOUNT_TYPE_LABELS[account.type] || ACCOUNT_TYPE_LABELS.CHECKING;
-            const IconComponent = config.icon;
+            const typeConfig = ACCOUNT_TYPE_LABELS[account.type] || ACCOUNT_TYPE_LABELS.CHECKING;
+            const IconComponent = typeConfig.icon;
+            const bankBgColor = account.color || '#10B981';
+
             return (
               <Box 
                 key={account.id} 
@@ -310,15 +351,17 @@ export default function AccountsPage() {
                 transition="all 0.25s ease"
                 _hover={{ transform: 'translateY(-4px)', boxShadow: 'md' }}
               >
-                <Flex justify="space-between" align="start" mb={4}>
+                <Box position="absolute" top={0} left={0} right={0} h="6px" bg={bankBgColor} />
+                
+                <Flex justify="space-between" align="start" mb={4} mt={1}>
                   <Flex align="center">
-                    <Flex bg={`${config.color}.100`} p={3} borderRadius="xl" mr={4}>
-                      <Icon as={IconComponent} color={`${config.color}.600`} boxSize={6} />
+                    <Flex bg={`${bankBgColor}20`} p={3} borderRadius="xl" mr={3}>
+                      <Icon as={IconComponent} style={{ color: bankBgColor }} boxSize={6} />
                     </Flex>
                     <Box>
                       <Text fontWeight="bold" fontSize="lg">{account.name}</Text>
-                      <Badge colorScheme={config.color} borderRadius="full" px={3} py={0.5} fontSize="xs">
-                        {config.label}
+                      <Badge bg={`${bankBgColor}15`} style={{ color: bankBgColor }} borderRadius="full" px={2.5} py={0.5} fontSize="xs" fontWeight="bold">
+                        {account.bankName || 'Banco'}
                       </Badge>
                     </Box>
                   </Flex>
@@ -334,17 +377,27 @@ export default function AccountsPage() {
                     />
                     <MenuList borderRadius="xl">
                       <MenuItem icon={<FiEdit2 />} onClick={() => handleOpenEditModal(account)}>
-                        Editar
+                        Editar Conta
                       </MenuItem>
                       <MenuItem icon={<FiTrash2 />} color="red.400" onClick={() => setDeleteId(account.id)}>
-                        Excluir
+                        Excluir Conta
                       </MenuItem>
                     </MenuList>
                   </Menu>
                 </Flex>
+
+                {(account.agency || account.accountNumber) && (
+                  <HStack spacing={4} fontSize="xs" color="gray.500" mb={4} bg={useColorModeValue('gray.50', 'gray.900')} p={2.5} borderRadius="lg">
+                    {account.agency && <Text><Text as="span" fontWeight="bold">Agência:</Text> {account.agency}</Text>}
+                    {account.accountNumber && <Text><Text as="span" fontWeight="bold">Conta:</Text> {account.accountNumber}</Text>}
+                  </HStack>
+                )}
                 
                 <Text fontSize="2xl" fontWeight="bold" color={account.balance >= 0 ? 'emerald.500' : 'red.500'}>
-                  {formatCurrency(account.balance)}
+                  {formatCurrency(Number(account.balance) || 0)}
+                </Text>
+                <Text fontSize="xs" color="gray.400" mt={1}>
+                  Tipo: {typeConfig.label}
                 </Text>
               </Box>
             );
@@ -353,25 +406,60 @@ export default function AccountsPage() {
       )}
 
       {/* Modal Criar / Editar Conta */}
-      <Modal isOpen={isOpen} onClose={onClose} isCentered>
+      <Modal isOpen={isOpen} onClose={onClose} isCentered size="lg">
         <ModalOverlay backdropFilter="blur(5px)" />
         <ModalContent borderRadius="2xl" p={2}>
           <ModalHeader fontWeight="bold">
-            {editingAccount ? 'Editar Conta Bancária' : 'Nova Conta Bancária'}
+            {editingAccount ? 'Editar Conta Bancária' : 'Cadastrar Nova Conta Bancária'}
           </ModalHeader>
           <ModalCloseButton borderRadius="full" />
           <ModalBody>
             <VStack spacing={4}>
               <FormControl isRequired>
-                <FormLabel>Nome da Conta / Instituição</FormLabel>
+                <FormLabel>Instituição Bancária</FormLabel>
+                <Select 
+                  value={bankName} 
+                  onChange={(e) => handleBankSelect(e.target.value)} 
+                  borderRadius="xl"
+                >
+                  {PRESET_BANKS.map(b => (
+                    <option key={b.name} value={b.name}>{b.name}</option>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl isRequired>
+                <FormLabel>Nome da Conta / Identificação</FormLabel>
                 <Input 
                   value={name} 
                   onChange={(e) => setName(e.target.value)} 
-                  placeholder="Ex: Itaú Corrente, Nubank Reserva, C6 Black"
+                  placeholder="Ex: Nubank Conta Principal, Santander Cartão, PicPay Rendimentos"
                   borderRadius="xl"
                   focusBorderColor="#10B981"
                 />
               </FormControl>
+
+              <HStack spacing={4} w="full">
+                <FormControl flex={1}>
+                  <FormLabel>Agência (Opcional)</FormLabel>
+                  <Input 
+                    value={agency} 
+                    onChange={(e) => setAgency(e.target.value)} 
+                    placeholder="Ex: 0001"
+                    borderRadius="xl"
+                  />
+                </FormControl>
+
+                <FormControl flex={1}>
+                  <FormLabel>Número da Conta (Opcional)</FormLabel>
+                  <Input 
+                    value={accountNumber} 
+                    onChange={(e) => setAccountNumber(e.target.value)} 
+                    placeholder="Ex: 123456-7"
+                    borderRadius="xl"
+                  />
+                </FormControl>
+              </HStack>
 
               <FormControl isRequired>
                 <FormLabel>Tipo de Conta</FormLabel>
@@ -404,7 +492,7 @@ export default function AccountsPage() {
           <ModalFooter gap={3}>
             <Button variant="ghost" borderRadius="xl" onClick={onClose}>Cancelar</Button>
             <Button bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" isLoading={isSaving} onClick={handleSave}>
-              {editingAccount ? 'Salvar Alterações' : 'Criar Conta'}
+              {editingAccount ? 'Salvar Alterações' : 'Cadastrar Conta'}
             </Button>
           </ModalFooter>
         </ModalContent>
@@ -423,7 +511,7 @@ export default function AccountsPage() {
               Excluir Conta Bancária
             </AlertDialogHeader>
             <AlertDialogBody>
-              Tem certeza que deseja excluir esta conta?
+              Tem certeza que deseja excluir esta conta bancária? As transações vinculadas continuarão registradas.
             </AlertDialogBody>
             <AlertDialogFooter gap={3}>
               <Button ref={cancelRef} variant="ghost" borderRadius="xl" onClick={() => setDeleteId(null)}>
