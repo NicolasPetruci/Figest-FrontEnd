@@ -8,7 +8,7 @@ export async function POST(req: Request) {
 
     if (!clientId || !clientSecret) {
       return NextResponse.json(
-        { error: 'CLIENT_ID and CLIENT_SECRET environment variables are required' },
+        { error: 'CLIENT_ID and CLIENT_SECRET environment variables are required in .env' },
         { status: 500 }
       );
     }
@@ -26,9 +26,7 @@ export async function POST(req: Request) {
       // Optional body
     }
 
-    const connectToken = await pluggy.createConnectToken({
-      clientUserId,
-    });
+    const connectToken = await pluggy.createConnectToken(undefined, clientUserId ? { clientUserId } : undefined);
 
     return NextResponse.json({ accessToken: connectToken.accessToken });
   } catch (error: any) {
