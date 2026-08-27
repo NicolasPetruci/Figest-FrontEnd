@@ -6,7 +6,23 @@ export const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = useAuthStore.getState().accessToken;
+  let token = useAuthStore.getState().accessToken;
+
+  // Backup fallback: read directly from localStorage if store hasn't hydrated yet
+  if (!token && typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('auth-storage');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        if (parsed?.state?.accessToken) {
+          token = parsed.state.accessToken;
+        }
+      }
+    } catch (e) {
+      console.error('Error reading token from localStorage', e);
+    }
+  }
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -29,7 +45,7 @@ api.interceptors.response.use(
         );
 
         useAuthStore.getState().login({
-          user: useAuthStore.getState().user!, // Keep current user
+          user: useAuthStore.getState().user!,
           accessToken: data.accessToken,
         });
 
@@ -37,7 +53,9 @@ api.interceptors.response.use(
         return api(originalRequest);
       } catch (refreshError) {
         useAuthStore.getState().logout();
-        window.location.href = '/login';
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login';
+        }
         return Promise.reject(refreshError);
       }
     }
