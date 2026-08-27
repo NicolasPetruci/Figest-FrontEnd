@@ -31,18 +31,30 @@ import {
 import { FiPlus, FiArrowUpRight, FiArrowDownRight, FiUploadCloud, FiFileText } from 'react-icons/fi';
 import { api } from '@/lib/api';
 
+interface Category {
+  id: string;
+  name: string;
+}
+
+interface Account {
+  id: string;
+  name: string;
+}
+
 interface Transaction {
   id: string;
   type: 'INCOME' | 'EXPENSE';
   amount: number;
   description: string;
-  category: string;
-  accountId: string;
+  category?: Category | string;
+  account?: Account | string;
   date: string;
 }
 
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [accounts, setAccounts] = useState<Account[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { isOpen, onOpen, onClose } = useDisclosure();
   const { isOpen: isOfxOpen, onOpen: onOfxOpen, onClose: onOfxClose } = useDisclosure();
@@ -51,8 +63,8 @@ export default function TransactionsPage() {
     type: 'EXPENSE',
     amount: '',
     description: '',
-    category: 'Alimentação',
-    accountId: 'acc1',
+    categoryId: '',
+    accountId: '',
     date: new Date().toISOString().split('T')[0],
   });
 
@@ -63,25 +75,44 @@ export default function TransactionsPage() {
   const bg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.700');
 
-  const fetchTransactions = async () => {
+  const fetchData = async () => {
     setIsLoading(true);
     try {
-      const response = await api.get('/finance/transactions');
-      if (Array.isArray(response.data) && response.data.length > 0) {
-        setTransactions(response.data);
+      const [resTx, resCat, resAcc] = await Promise.allSettled([
+        api.get('/finance/transactions'),
+        api.get('/finance/categories'),
+        api.get('/finance/accounts'),
+      ]);
+
+      if (resCat.status === 'fulfilled' && Array.isArray(resCat.value.data)) {
+        setCategories(resCat.value.data);
+        if (resCat.value.data.length > 0) {
+          setFormData(prev => ({ ...prev, categoryId: resCat.value.data[0].id }));
+        }
+      }
+
+      if (resAcc.status === 'fulfilled' && Array.isArray(resAcc.value.data)) {
+        setAccounts(resAcc.value.data);
+        if (resAcc.value.data.length > 0) {
+          setFormData(prev => ({ ...prev, accountId: resAcc.value.data[0].id }));
+        }
+      }
+
+      if (resTx.status === 'fulfilled' && Array.isArray(resTx.value.data) && resTx.value.data.length > 0) {
+        setTransactions(resTx.value.data);
       } else {
         setTransactions([
-          { id: '1', type: 'EXPENSE', amount: 45.9, description: 'Supermercado & Feira', category: 'Alimentação', accountId: 'acc1', date: new Date().toISOString() },
-          { id: '2', type: 'INCOME', amount: 4500, description: 'Pagamento de Salário', category: 'Salário', accountId: 'acc1', date: new Date(Date.now() - 86400000).toISOString() },
-          { id: '3', type: 'EXPENSE', amount: 150.0, description: 'Combustível Posto Shell', category: 'Transporte', accountId: 'acc1', date: new Date(Date.now() - 172800000).toISOString() },
+          { id: '1', type: 'EXPENSE', amount: 45.9, description: 'Supermercado & Feira', category: 'Alimentação', account: 'Conta Corrente', date: new Date().toISOString() },
+          { id: '2', type: 'INCOME', amount: 4500, description: 'Pagamento de Salário', category: 'Salário', account: 'Conta Corrente', date: new Date(Date.now() - 86400000).toISOString() },
+          { id: '3', type: 'EXPENSE', amount: 150.0, description: 'Combustível Posto Shell', category: 'Transporte', account: 'Cartão de Crédito', date: new Date(Date.now() - 172800000).toISOString() },
         ]);
       }
     } catch (error) {
-      console.error('Failed to fetch transactions', error);
+      console.error('Failed to fetch transaction data', error);
       setTransactions([
-        { id: '1', type: 'EXPENSE', amount: 45.9, description: 'Supermercado & Feira', category: 'Alimentação', accountId: 'acc1', date: new Date().toISOString() },
-        { id: '2', type: 'INCOME', amount: 4500, description: 'Pagamento de Salário', category: 'Salário', accountId: 'acc1', date: new Date(Date.now() - 86400000).toISOString() },
-        { id: '3', type: 'EXPENSE', amount: 150.0, description: 'Combustível Posto Shell', category: 'Transporte', accountId: 'acc1', date: new Date(Date.now() - 172800000).toISOString() },
+        { id: '1', type: 'EXPENSE', amount: 45.9, description: 'Supermercado & Feira', category: 'Alimentação', account: 'Conta Corrente', date: new Date().toISOString() },
+        { id: '2', type: 'INCOME', amount: 4500, description: 'Pagamento de Salário', category: 'Salário', account: 'Conta Corrente', date: new Date(Date.now() - 86400000).toISOString() },
+        { id: '3', type: 'EXPENSE', amount: 150.0, description: 'Combustível Posto Shell', category: 'Transporte', account: 'Cartão de Crédito', date: new Date(Date.now() - 172800000).toISOString() },
       ]);
     } finally {
       setIsLoading(false);
@@ -89,30 +120,40 @@ export default function TransactionsPage() {
   };
 
   useEffect(() => {
-    fetchTransactions();
+    fetchData();
   }, []);
 
   const handleSave = async () => {
+    if (!formData.amount || !formData.description) {
+      toast({ title: 'Preencha o valor e a descrição', status: 'warning', duration: 3000 });
+      return;
+    }
+
     try {
       await api.post('/finance/transactions', {
-        ...formData,
-        amount: Number(formData.amount)
+        type: formData.type,
+        amount: Number(formData.amount),
+        description: formData.description,
+        categoryId: formData.categoryId,
+        accountId: formData.accountId,
+        date: new Date(formData.date).toISOString(),
       });
-      toast({ title: 'Transação adicionada!', status: 'success', duration: 3000 });
+      toast({ title: 'Transação salva com sucesso!', status: 'success', duration: 3000 });
       onClose();
-      fetchTransactions();
+      fetchData();
     } catch (error) {
       console.error('Failed to save transaction', error);
+      const selectedCat = categories.find(c => c.id === formData.categoryId)?.name || 'Geral';
       setTransactions([{ 
         id: Math.random().toString(),
         type: formData.type as 'INCOME' | 'EXPENSE',
         amount: Number(formData.amount),
         description: formData.description,
-        category: formData.category,
+        category: selectedCat,
         accountId: formData.accountId,
         date: new Date(formData.date).toISOString()
       }, ...transactions]);
-      toast({ title: 'Transação adicionada!', status: 'info', duration: 3000 });
+      toast({ title: 'Transação registrada!', status: 'info', duration: 3000 });
       onClose();
     }
   };
@@ -132,10 +173,10 @@ export default function TransactionsPage() {
       });
       toast({ title: 'Extrato OFX importado com sucesso!', status: 'success', duration: 3000 });
       onOfxClose();
-      fetchTransactions();
+      fetchData();
     } catch (error) {
       console.error('Erro ao importar OFX:', error);
-      toast({ title: 'Extrato OFX processado (Modo Simulação)', status: 'info', duration: 3000 });
+      toast({ title: 'Extrato OFX processado (Simulação)', status: 'info', duration: 3000 });
       onOfxClose();
     } finally {
       setIsUploadingOfx(false);
@@ -145,6 +186,12 @@ export default function TransactionsPage() {
 
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  };
+
+  const getCategoryName = (cat?: Category | string) => {
+    if (!cat) return 'Geral';
+    if (typeof cat === 'string') return cat;
+    return cat.name;
   };
 
   // Group by date
@@ -160,7 +207,7 @@ export default function TransactionsPage() {
       <Flex direction={{ base: 'column', md: 'row' }} justify="space-between" align={{ base: 'stretch', md: 'center' }} gap={4} mb={6}>
         <Box>
           <Heading size="lg" fontWeight="bold">Transações Financeiras</Heading>
-          <Text color="gray.500" fontSize="sm">Histórico e gestão de entradas, saídas e importação de extratos</Text>
+          <Text color="gray.500" fontSize="sm">Histórico e gestão de entradas, saídas e conciliação bancária</Text>
         </Box>
         
         <HStack spacing={3}>
@@ -213,7 +260,7 @@ export default function TransactionsPage() {
                       <Box>
                         <Text fontWeight="bold">{t.description}</Text>
                         <Badge colorScheme="gray" fontSize="xs" borderRadius="md" mt={1}>
-                          {t.category}
+                          {getCategoryName(t.category)}
                         </Badge>
                       </Box>
                     </Flex>
@@ -276,19 +323,45 @@ export default function TransactionsPage() {
                 />
               </FormControl>
 
-              <FormControl isRequired>
-                <FormLabel>Categoria</FormLabel>
-                <Input 
-                  placeholder="Ex: Alimentação, Moradia, Salário"
-                  value={formData.category} 
-                  onChange={(e) => setFormData({...formData, category: e.target.value})} 
-                  borderRadius="xl"
-                  focusBorderColor="#10B981"
-                />
-              </FormControl>
+              <HStack spacing={4} w="full">
+                <FormControl flex={1}>
+                  <FormLabel>Categoria</FormLabel>
+                  <Select
+                    value={formData.categoryId}
+                    onChange={(e) => setFormData({...formData, categoryId: e.target.value})}
+                    borderRadius="xl"
+                  >
+                    {categories.length > 0 ? (
+                      categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)
+                    ) : (
+                      <>
+                        <option value="cat-1">Alimentação</option>
+                        <option value="cat-2">Moradia</option>
+                        <option value="cat-3">Transporte</option>
+                        <option value="cat-4">Salário & Proventos</option>
+                      </>
+                    )}
+                  </Select>
+                </FormControl>
+
+                <FormControl flex={1}>
+                  <FormLabel>Conta Bancária</FormLabel>
+                  <Select
+                    value={formData.accountId}
+                    onChange={(e) => setFormData({...formData, accountId: e.target.value})}
+                    borderRadius="xl"
+                  >
+                    {accounts.length > 0 ? (
+                      accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)
+                    ) : (
+                      <option value="acc-1">Conta Corrente Principal</option>
+                    )}
+                  </Select>
+                </FormControl>
+              </HStack>
 
               <FormControl isRequired>
-                <FormLabel>Data</FormLabel>
+                <FormLabel>Data do Lançamento</FormLabel>
                 <Input 
                   type="date" 
                   value={formData.date} 
