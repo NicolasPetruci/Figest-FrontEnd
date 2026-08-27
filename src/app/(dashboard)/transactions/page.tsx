@@ -95,6 +95,22 @@ interface ImportLog {
   CreatedAt: string;
 }
 
+const PRESET_BANKS = [
+  { name: 'Banco Nubank', color: '#8A05BE' },
+  { name: 'Banco Santander', color: '#EC0000' },
+  { name: 'PicPay', color: '#21C25E' },
+  { name: 'Itaú Unibanco', color: '#EC7000' },
+  { name: 'Banco do Brasil', color: '#FFCC00' },
+  { name: 'Banco Bradesco', color: '#CC092F' },
+  { name: 'Banco Inter', color: '#FF7A00' },
+  { name: 'C6 Bank', color: '#1B1B1B' },
+  { name: 'Caixa Econômica', color: '#005CA9' },
+  { name: 'Mercado Pago', color: '#00A8E8' },
+  { name: 'BTG Pactual', color: '#00204A' },
+  { name: 'Wise / Nomad', color: '#2563EB' },
+  { name: 'CUSTOM', label: '➕ Outro Banco / Personalizado', color: '#10B981' },
+];
+
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
@@ -123,8 +139,16 @@ export default function TransactionsPage() {
   const [editBatchSubtag, setEditBatchSubtag] = useState('');
   const [isUpdatingBatch, setIsUpdatingBatch] = useState(false);
 
+  // Quick Bank Creation State
+  const { isOpen: isNewBankOpen, onOpen: onNewBankOpen, onClose: onNewBankClose } = useDisclosure();
+  const [quickBankSelect, setQuickBankSelect] = useState('Banco Nubank');
+  const [quickCustomBankName, setQuickCustomBankName] = useState('');
+  const [quickAccountName, setQuickAccountName] = useState('');
+  const [quickBankColor, setQuickBankColor] = useState('#8A05BE');
+  const [isCreatingQuickBank, setIsCreatingQuickBank] = useState(false);
+
   // Modals State
-  const { isOpen, onOpen, onClose } = useDisclosure(); // Create/Edit Modal
+  const { isOpen, onOpen, onClose } = useDisclosure(); // Create/Edit Transaction Modal
   const { isOpen: isOfxOpen, onOpen: onOfxOpen, onClose: onOfxClose } = useDisclosure();
   const { isOpen: isBulkOpen, onOpen: onBulkOpen, onClose: onBulkClose } = useDisclosure();
   const { isOpen: isBatchEditOpen, onOpen: onBatchEditOpen, onClose: onBatchEditClose } = useDisclosure();
@@ -217,6 +241,46 @@ export default function TransactionsPage() {
     fetchData();
     fetchImportLogs();
   }, [periodMode, selectedMonth, selectedYear, selectedAccountId, selectedSubtag]);
+
+  // Quick Bank Creation Logic
+  const handleCreateQuickBank = async () => {
+    const finalBankName = quickBankSelect === 'CUSTOM' ? quickCustomBankName.trim() : quickBankSelect;
+    const finalName = quickAccountName.trim() || finalBankName;
+
+    if (!finalBankName) {
+      toast({ title: 'Informe o nome do banco', status: 'warning', duration: 3000 });
+      return;
+    }
+
+    setIsCreatingQuickBank(true);
+    try {
+      const res = await api.post('/finance/accounts', {
+        name: finalName,
+        bankName: finalBankName,
+        type: 'CHECKING',
+        balance: 0,
+        currency: 'BRL',
+        color: quickBankColor,
+      });
+
+      const newAccount = res.data;
+      toast({ title: `Banco ${finalBankName} cadastrado com sucesso!`, status: 'success', duration: 3000 });
+      
+      // Auto select the new bank
+      setOfxAccountId(newAccount.id);
+      setFormData(prev => ({ ...prev, accountId: newAccount.id }));
+      setEditBatchAccountId(newAccount.id);
+      setBulkAccountId(newAccount.id);
+
+      onNewBankClose();
+      fetchData();
+    } catch (error) {
+      console.error('Failed to create quick bank', error);
+      toast({ title: 'Erro ao cadastrar novo banco', status: 'error', duration: 4000 });
+    } finally {
+      setIsCreatingQuickBank(false);
+    }
+  };
 
   const handleOpenCreateModal = () => {
     setEditingTx(null);
@@ -324,7 +388,6 @@ export default function TransactionsPage() {
     }
   };
 
-  // Open Edit OFX Batch Modal
   const handleOpenBatchEditModal = (log: ImportLog) => {
     setEditingBatch(log);
     setEditBatchAccountId(log.AccountID || (accounts.length > 0 ? accounts[0].id : ''));
@@ -332,7 +395,6 @@ export default function TransactionsPage() {
     onBatchEditOpen();
   };
 
-  // Execute OFX Batch Reclassification
   const handleSaveBatchEdit = async () => {
     if (!editingBatch) return;
     setIsUpdatingBatch(true);
@@ -359,7 +421,6 @@ export default function TransactionsPage() {
     }
   };
 
-  // Checkbox selection logic
   const handleSelectAll = (checked: boolean) => {
     if (checked) {
       setSelectedIds(transactions.map(t => t.id));
@@ -374,7 +435,6 @@ export default function TransactionsPage() {
     );
   };
 
-  // Bulk Edit Execution
   const handleApplyBulkUpdate = async () => {
     if (selectedIds.length === 0) return;
     setIsBulkUpdating(true);
@@ -426,7 +486,6 @@ export default function TransactionsPage() {
     };
   };
 
-  // Group transactions by date
   const groupedTransactions = transactions.reduce((acc, t) => {
     const d = new Date(t.date).toLocaleDateString('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' });
     if (!acc[d]) acc[d] = [];
@@ -773,41 +832,77 @@ export default function TransactionsPage() {
         </TabPanels>
       </Tabs>
 
-      {/* Floating Action Bar for Bulk Tagging */}
-      {selectedIds.length > 0 && (
-        <Box 
-          position="fixed" 
-          bottom="24px" 
-          left="50%" 
-          transform="translateX(-50%)" 
-          bg={useColorModeValue('gray.900', 'gray.800')} 
-          color="white" 
-          px={6} 
-          py={4} 
-          borderRadius="2xl" 
-          shadow="2xl" 
-          zIndex={100}
-          w={{ base: '90%', md: '600px' }}
-        >
-          <Flex justify="space-between" align="center">
-            <HStack spacing={2}>
-              <Icon as={FiCheckSquare} color="emerald.400" boxSize={5} />
-              <Text fontWeight="bold" fontSize="sm">
-                {selectedIds.length} transaç{selectedIds.length > 1 ? 'ões selecionadas' : 'ão selecionada'}
+      {/* Modal Importar OFX */}
+      <Modal isOpen={isOfxOpen} onClose={onOfxClose} isCentered size="lg">
+        <ModalOverlay backdropFilter="blur(5px)" />
+        <ModalContent borderRadius="2xl" p={2}>
+          <ModalHeader fontWeight="bold">Importar Extrato Bancário (.OFX)</ModalHeader>
+          <ModalCloseButton borderRadius="full" />
+          <ModalBody>
+            <VStack spacing={4} align="stretch">
+              <Text fontSize="sm" color="gray.500">
+                Selecione o banco de destino para vincular as transações do extrato `.ofx`.
               </Text>
-            </HStack>
-            
-            <HStack spacing={3}>
-              <Button size="sm" colorScheme="emerald" borderRadius="xl" onClick={onBulkOpen}>
-                Classificar / Tagear em Massa
-              </Button>
-              <Button size="sm" variant="ghost" color="gray.400" _hover={{ color: 'white' }} onClick={() => setSelectedIds([])}>
-                Cancelar
-              </Button>
-            </HStack>
-          </Flex>
-        </Box>
-      )}
+              
+              <FormControl isRequired>
+                <Flex justify="space-between" align="center" mb={1}>
+                  <FormLabel mb={0}>Vincular ao Banco / Conta</FormLabel>
+                  <Button size="xs" colorScheme="emerald" variant="link" onClick={onNewBankOpen}>
+                    ➕ Cadastrar Novo Banco
+                  </Button>
+                </Flex>
+                <Select 
+                  value={ofxAccountId} 
+                  onChange={(e) => setOfxAccountId(e.target.value)}
+                  borderRadius="xl"
+                >
+                  {accounts.map(a => (
+                    <option key={a.id} value={a.id}>{a.bankName || a.name}</option>
+                  ))}
+                </Select>
+              </FormControl>
+
+              <FormControl>
+                <FormLabel>Subtag de Categoria para o Extrato (Opcional)</FormLabel>
+                <Input 
+                  placeholder="Ex: Fatura Nubank, Extrato Santander, Viagem"
+                  value={ofxSubtag} 
+                  onChange={(e) => setOfxSubtag(e.target.value)} 
+                  borderRadius="xl"
+                />
+              </FormControl>
+
+              <Box
+                border="2px dashed"
+                borderColor="blue.300"
+                borderRadius="2xl"
+                p={6}
+                textAlign="center"
+                bg={useColorModeValue('blue.50', 'gray.900')}
+              >
+                <Icon as={FiFileText} boxSize={10} color="blue.500" mb={2} />
+                <Text fontSize="sm" fontWeight="medium" mb={2}>
+                  {ofxFile ? ofxFile.name : 'Clique para selecionar o arquivo .ofx'}
+                </Text>
+                <Input
+                  type="file"
+                  accept=".ofx"
+                  onChange={(e) => setOfxFile(e.target.files?.[0] || null)}
+                  display="block"
+                  mx="auto"
+                  size="sm"
+                />
+              </Box>
+            </VStack>
+          </ModalBody>
+          <ModalFooter gap={3}>
+            <Button variant="ghost" borderRadius="xl" onClick={onOfxClose}>Cancelar</Button>
+            <Button colorScheme="blue" borderRadius="xl" isLoading={isUploadingOfx} onClick={handleUploadOfx}>
+              Enviar Extrato
+            </Button>
+          </ModalFooter>
+        </ModalContent>
+      </Modal>
 
       {/* Modal Editar Extrato Inteiro (Batch) */}
       <Modal isOpen={isBatchEditOpen} onClose={onBatchEditClose} isCentered size="lg">
@@ -824,7 +919,12 @@ export default function TransactionsPage() {
               </Text>
 
               <FormControl isRequired>
-                <FormLabel>Novo Banco / Conta Bancária</FormLabel>
+                <Flex justify="space-between" align="center" mb={1}>
+                  <FormLabel mb={0}>Novo Banco / Conta Bancária</FormLabel>
+                  <Button size="xs" colorScheme="emerald" variant="link" onClick={onNewBankOpen}>
+                    ➕ Cadastrar Novo Banco
+                  </Button>
+                </Flex>
                 <Select
                   value={editBatchAccountId}
                   onChange={(e) => setEditBatchAccountId(e.target.value)}
@@ -902,7 +1002,12 @@ export default function TransactionsPage() {
 
               <HStack spacing={4} w="full">
                 <FormControl flex={1} isRequired>
-                  <FormLabel>Banco / Conta Bancária</FormLabel>
+                  <Flex justify="space-between" align="center" mb={1}>
+                    <FormLabel mb={0}>Banco / Conta</FormLabel>
+                    <Button size="xs" colorScheme="emerald" variant="link" onClick={onNewBankOpen}>
+                      ➕ Novo Banco
+                    </Button>
+                  </Flex>
                   <Select
                     value={formData.accountId}
                     onChange={(e) => setFormData({...formData, accountId: e.target.value})}
@@ -970,7 +1075,12 @@ export default function TransactionsPage() {
               </Text>
 
               <FormControl>
-                <FormLabel>Alterar Banco / Conta</FormLabel>
+                <Flex justify="space-between" align="center" mb={1}>
+                  <FormLabel mb={0}>Alterar Banco / Conta</FormLabel>
+                  <Button size="xs" colorScheme="emerald" variant="link" onClick={onNewBankOpen}>
+                    ➕ Novo Banco
+                  </Button>
+                </Flex>
                 <Select
                   value={bulkAccountId}
                   onChange={(e) => setBulkAccountId(e.target.value)}
@@ -1013,68 +1123,77 @@ export default function TransactionsPage() {
         </ModalContent>
       </Modal>
 
-      {/* Modal Importar OFX */}
-      <Modal isOpen={isOfxOpen} onClose={onOfxClose} isCentered size="lg">
+      {/* Quick Bank Creation Sub-Modal */}
+      <Modal isOpen={isNewBankOpen} onClose={onNewBankClose} isCentered size="md">
         <ModalOverlay backdropFilter="blur(5px)" />
         <ModalContent borderRadius="2xl" p={2}>
-          <ModalHeader fontWeight="bold">Importar Extrato Bancário (.OFX)</ModalHeader>
+          <ModalHeader fontWeight="bold">➕ Cadastrar Novo Banco Instantâneo</ModalHeader>
           <ModalCloseButton borderRadius="full" />
           <ModalBody>
-            <VStack spacing={4} align="stretch">
-              <Text fontSize="sm" color="gray.500">
-                Selecione o banco de destino para vincular as transações do extrato `.ofx`.
-              </Text>
-              
+            <VStack spacing={4}>
               <FormControl isRequired>
-                <FormLabel>Vincular ao Banco / Conta</FormLabel>
+                <FormLabel>Instituição Bancária</FormLabel>
                 <Select 
-                  value={ofxAccountId} 
-                  onChange={(e) => setOfxAccountId(e.target.value)}
+                  value={quickBankSelect} 
+                  onChange={(e) => {
+                    setQuickBankSelect(e.target.value);
+                    if (e.target.value !== 'CUSTOM') {
+                      const found = PRESET_BANKS.find(b => b.name === e.target.value);
+                      if (found) setQuickBankColor(found.color);
+                    }
+                  }} 
                   borderRadius="xl"
                 >
-                  {accounts.map(a => (
-                    <option key={a.id} value={a.id}>{a.bankName || a.name}</option>
+                  {PRESET_BANKS.map(b => (
+                    <option key={b.name} value={b.name}>{b.label || b.name}</option>
                   ))}
                 </Select>
               </FormControl>
 
+              {quickBankSelect === 'CUSTOM' && (
+                <FormControl isRequired>
+                  <FormLabel>Nome do Banco Personalizado</FormLabel>
+                  <Input 
+                    placeholder="Ex: Sofisa, Nomad, Wise, BTG, PagBank"
+                    value={quickCustomBankName}
+                    onChange={(e) => setQuickCustomBankName(e.target.value)}
+                    borderRadius="xl"
+                    focusBorderColor="#10B981"
+                  />
+                </FormControl>
+              )}
+
               <FormControl>
-                <FormLabel>Subtag de Categoria para o Extrato (Opcional)</FormLabel>
+                <FormLabel>Nome da Conta (Opcional)</FormLabel>
                 <Input 
-                  placeholder="Ex: Fatura Nubank, Extrato Santander, Viagem"
-                  value={ofxSubtag} 
-                  onChange={(e) => setOfxSubtag(e.target.value)} 
+                  placeholder="Ex: Nubank Principal, Santander Cartão"
+                  value={quickAccountName}
+                  onChange={(e) => setQuickAccountName(e.target.value)}
                   borderRadius="xl"
                 />
               </FormControl>
 
-              <Box
-                border="2px dashed"
-                borderColor="blue.300"
-                borderRadius="2xl"
-                p={6}
-                textAlign="center"
-                bg={useColorModeValue('blue.50', 'gray.900')}
-              >
-                <Icon as={FiFileText} boxSize={10} color="blue.500" mb={2} />
-                <Text fontSize="sm" fontWeight="medium" mb={2}>
-                  {ofxFile ? ofxFile.name : 'Clique para selecionar o arquivo .ofx'}
-                </Text>
-                <Input
-                  type="file"
-                  accept=".ofx"
-                  onChange={(e) => setOfxFile(e.target.files?.[0] || null)}
-                  display="block"
-                  mx="auto"
-                  size="sm"
-                />
-              </Box>
+              <FormControl isRequired>
+                <FormLabel>Cor da Marca do Banco</FormLabel>
+                <HStack spacing={3}>
+                  <Input 
+                    type="color" 
+                    value={quickBankColor} 
+                    onChange={(e) => setQuickBankColor(e.target.value)} 
+                    w="60px" 
+                    h="40px" 
+                    p={1} 
+                    borderRadius="lg" 
+                  />
+                  <Text fontSize="sm" color="gray.500">{quickBankColor}</Text>
+                </HStack>
+              </FormControl>
             </VStack>
           </ModalBody>
           <ModalFooter gap={3}>
-            <Button variant="ghost" borderRadius="xl" onClick={onOfxClose}>Cancelar</Button>
-            <Button colorScheme="blue" borderRadius="xl" isLoading={isUploadingOfx} onClick={handleUploadOfx}>
-              Enviar Extrato
+            <Button variant="ghost" borderRadius="xl" onClick={onNewBankClose}>Cancelar</Button>
+            <Button bg="#10B981" color="white" _hover={{ bg: '#059669' }} borderRadius="xl" isLoading={isCreatingQuickBank} onClick={handleCreateQuickBank}>
+              Salvar Banco & Selecionar
             </Button>
           </ModalFooter>
         </ModalContent>

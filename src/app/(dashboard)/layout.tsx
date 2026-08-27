@@ -13,7 +13,7 @@ const NAV_ITEMS = {
   pt: [
     { name: 'Início', icon: FiHome, path: '/' },
     { name: 'Transações', icon: FiDollarSign, path: '/transactions' },
-    { name: 'Contas', icon: FiCreditCard, path: '/accounts' },
+    { name: 'Bancos & Contas', icon: FiCreditCard, path: '/accounts' },
     { name: 'Categorias', icon: FiPieChart, path: '/categories' },
     { name: 'Compras', icon: FiShoppingBag, path: '/purchases' },
     { name: 'Relatórios', icon: FiFileText, path: '/reports' },
@@ -22,7 +22,7 @@ const NAV_ITEMS = {
   en: [
     { name: 'Dashboard', icon: FiHome, path: '/' },
     { name: 'Transactions', icon: FiDollarSign, path: '/transactions' },
-    { name: 'Accounts', icon: FiCreditCard, path: '/accounts' },
+    { name: 'Banks & Accounts', icon: FiCreditCard, path: '/accounts' },
     { name: 'Categories', icon: FiPieChart, path: '/categories' },
     { name: 'Purchases', icon: FiShoppingBag, path: '/purchases' },
     { name: 'Reports', icon: FiFileText, path: '/reports' },
